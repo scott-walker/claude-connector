@@ -49,9 +49,11 @@ export class Claude {
     validateClientOptions(options);
     this.options = Object.freeze({ ...options });
 
+    const useSdk = options.useSdk !== false; // default: true
+
     if (executor) {
       this.executor = executor;
-    } else if (options.useSdk) {
+    } else if (useSdk) {
       const sdkOpts: SdkExecutorOptions = {
         model: options.model,
         pathToClaudeCodeExecutable: options.executable,

@@ -19,19 +19,20 @@ export interface ClientOptions {
 
   /**
    * Use the Claude Agent SDK (V2) instead of spawning CLI processes.
+   * **Defaults to `true`.**
    *
-   * When `true`, creates a persistent SDK session that stays warm.
+   * Creates a persistent SDK session that stays warm.
    * First query requires initialization (~5-10s), but subsequent queries
    * are near-instant. Call `claude.init()` to warm up explicitly,
    * or let it auto-initialize on the first query.
+   *
+   * Set to `false` to use CLI mode (each query spawns a new process).
    *
    * Subscribe to initialization events:
    * ```ts
    * claude.on('init:stage', (stage, msg) => console.log(stage, msg))
    * claude.on('init:ready', () => console.log('Ready!'))
    * ```
-   *
-   * Requires `@anthropic-ai/claude-agent-sdk` to be installed.
    */
   readonly useSdk?: boolean;
 
