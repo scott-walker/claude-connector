@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="280" viewBox="0 0 800 280">
+  <defs>
+    <clipPath id="rounded">
+      <rect width="800" height="280" rx="20" ry="20"/>
+    </clipPath>
+    <linearGradient id="orangeGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F5A623"/>
+      <stop offset="100%" stop-color="#E8751A"/>
+    </linearGradient>
+    <radialGradient id="glowOrb" cx="0.82" cy="0.65" r="0.4">
+      <stop offset="0%" stop-color="#F5A623" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#F5A623" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowOrb2" cx="0.12" cy="0.25" r="0.3">
+      <stop offset="0%" stop-color="#E8751A" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#E8751A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <rect width="800" height="280" fill="#1b1000"/>
+    <rect width="800" height="280" fill="url(#glowOrb)"/>
+    <rect width="800" height="280" fill="url(#glowOrb2)"/>
+    <text x="400" y="125" text-anchor="middle" font-family="Impact, 'Arial Black', sans-serif" font-size="82" fill="#FFFFFF" letter-spacing="5">CLAUDE CODE</text>
+    <text x="400" y="215" text-anchor="middle" font-family="Impact, 'Arial Black', sans-serif" font-size="82" fill="url(#orangeGrad)" letter-spacing="5" font-style="italic">IN YOUR CODE</text>
+  </g>
+</svg>

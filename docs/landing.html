@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>claude-connector — Claude Code in Your Code</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -43,6 +44,7 @@
       scroll-snap-type: y mandatory;
       scroll-behavior: smooth;
       overflow-y: auto;
+      overflow-x: hidden;
       scrollbar-width: none;
     }
     html::-webkit-scrollbar { display: none; }
@@ -86,6 +88,7 @@
       padding: 0 24px;
       position: relative;
       z-index: 1;
+      overflow-x: hidden;
     }
 
     section {
@@ -270,6 +273,7 @@
       margin-left: auto;
       margin-right: auto;
       text-align: left;
+      width: 100%;
     }
     .code-header {
       display: flex;
@@ -457,6 +461,8 @@
       color: var(--text-secondary);
       overflow-x: auto;
       white-space: pre;
+      max-width: 100%;
+      width: 100%;
     }
 
     .stats {
@@ -628,35 +634,94 @@
     @media (max-width: 768px) {
       html { scroll-snap-type: none; }
       section { min-height: auto; padding: 48px 0; }
-      .container { padding: 0 16px; }
-      h1 { font-size: 40px; letter-spacing: 1px; }
-      h2 { font-size: 28px; letter-spacing: 1px; }
+      .container { padding: 0 20px; }
+
+      /* Typography */
+      h1 { font-size: 36px; letter-spacing: 1px; }
+      h2 { font-size: 26px; letter-spacing: 1px; }
+      .section-label { font-size: 12px; letter-spacing: 2px; padding: 3px 10px; }
+      .section-desc { font-size: 14px; margin-bottom: 32px; }
+
+      /* Hero */
       .hero { padding-top: 48px; padding-bottom: 48px; min-height: auto; }
-      .hero-sub { font-size: 16px; margin-bottom: 32px; }
+      .hero-sub { font-size: 15px; margin-bottom: 28px; }
       .hero-actions { flex-direction: column; align-items: stretch; }
       .btn { justify-content: center; padding: 12px 20px; font-size: 14px; }
-      .install-bar { margin-top: 32px; }
-      .install-cmd { font-size: 12px; padding: 12px 16px; word-break: break-all; }
-      .stats { flex-wrap: wrap; gap: 20px; justify-content: center; }
-      .stat-value { font-size: 28px; }
+
+      /* Install bar */
+      .install-bar { margin-top: 28px; }
+      .install-cmd { font-size: 11px; padding: 10px 14px; word-break: break-all; }
+
+      /* Stats */
+      .stats { flex-wrap: wrap; gap: 16px; justify-content: center; }
+      .stat-value { font-size: 26px; }
       .stat-label { font-size: 11px; }
-      .code-window { transform: none !important; margin-top: 32px; }
-      pre { font-size: 11px; padding: 16px; line-height: 1.6; }
+
+      /* Code windows — must stay within container */
+      .code-window {
+        transform: none !important;
+        margin-top: 24px;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        max-width: 100% !important;
+        width: 100%;
+      }
+      pre {
+        font-size: 10.5px;
+        padding: 14px;
+        line-height: 1.55;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        word-break: normal;
+        white-space: pre;
+      }
+      .code-header span { font-size: 11px; }
+
+      /* Before/After comparison */
       .comparison { grid-template-columns: 1fr; }
-      .comp-card { padding: 20px; }
-      .comp-card h3 { font-size: 14px; }
-      .section-label { font-size: 13px; letter-spacing: 2px; padding: 3px 12px; }
-      .section-desc { font-size: 15px; margin-bottom: 32px; }
-      .arch-diagram { font-size: 11px; padding: 24px 16px; }
-      .speech-bubble { padding: 24px; margin-left: 0; margin-right: 0; }
-      .speech-bubble h2 { font-size: 24px; }
-      .speech-bubble p { font-size: 15px; }
-      .npm-banner { flex-direction: column; text-align: center; align-items: center; padding: 20px 16px; gap: 16px; }
-      .npm-banner-text { flex-direction: column; text-align: center; gap: 12px; }
-      .npm-banner-text h3 { font-size: 20px; }
-      .npm-banner-text p { font-size: 11px; }
+      .comp-card { padding: 16px; }
+      .comp-card h3 { font-size: 13px; }
+      .comp-card pre { font-size: 10.5px; line-height: 1.5; }
+
+      /* Architecture diagram */
+      .arch-diagram { font-size: 10px; padding: 16px 12px; line-height: 1.7; }
+
+      /* API capabilities grid */
+      .container > div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+        font-size: 13px !important;
+      }
+
+      /* Speech bubble (CTA) */
+      .speech-bubble { padding: 20px; margin-left: 0; margin-right: 0; max-width: 100%; }
+      .speech-bubble h2 { font-size: 22px; }
+      .speech-bubble p { font-size: 14px; }
+
+      /* npm banner */
+      .npm-banner {
+        flex-direction: column;
+        text-align: left;
+        align-items: flex-start;
+        padding: 16px;
+        gap: 14px;
+      }
+      .npm-banner-text {
+        flex-direction: column;
+        gap: 10px;
+      }
+      .npm-banner-text h3 { font-size: 18px; }
+      .npm-banner-text p { font-size: 11px; word-break: break-word; }
+      .npm-banner .btn { width: 100%; justify-content: center; }
+
+      /* CTA & Footer */
       .cta { padding: 48px 0; }
-      footer { padding: 24px 0; font-size: 12px; }
+      footer { padding: 20px 0; font-size: 12px; }
+
+      /* Glow orbs — smaller on mobile */
+      .glow-orb.orange { width: 300px; height: 300px; }
+      .glow-orb.amber { width: 200px; height: 200px; }
+      .glow-orb.red { width: 250px; height: 250px; }
     }
   </style>
 </head>
