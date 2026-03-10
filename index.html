@@ -33,11 +33,19 @@
       --cream: #fef3c7;
       --radius: 4px;
       --comic-border: 3px solid var(--border-comic);
-      --shadow-comic: 6px 6px 0px var(--border-comic);
-      --shadow-comic-lg: 8px 8px 0px var(--border-comic);
+      --shadow-comic: none;
+      --shadow-comic-lg: none;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html {
+      scroll-snap-type: y mandatory;
+      scroll-behavior: smooth;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    html::-webkit-scrollbar { display: none; }
 
     body {
       font-family: 'Comic Neue', cursive, sans-serif;
@@ -46,6 +54,10 @@
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
+    }
+
+    section, .cta, footer {
+      scroll-snap-align: start;
     }
 
     .comic-bg {
@@ -76,7 +88,13 @@
       z-index: 1;
     }
 
-    section { padding: 100px 0; }
+    section {
+      padding: 80px 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
     nav {
       position: fixed;
@@ -99,7 +117,6 @@
       font-size: 26px;
       letter-spacing: 2px;
       color: var(--text);
-      text-shadow: 2px 2px 0px var(--accent-deep);
     }
     nav .logo span { color: var(--accent-bright); }
     nav .nav-links { display: flex; gap: 28px; align-items: center; }
@@ -117,7 +134,6 @@
       color: white;
       padding: 8px 20px;
       border: 2px solid var(--border-comic);
-      box-shadow: 3px 3px 0px var(--border-comic);
       font-size: 14px;
       font-family: 'Bangers', cursive;
       letter-spacing: 1px;
@@ -127,10 +143,14 @@
     .btn-nav:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0px var(--border-comic); background: var(--accent); }
 
     .hero {
-      padding-top: 180px;
-      padding-bottom: 120px;
+      padding-top: 80px;
+      padding-bottom: 60px;
       text-align: center;
       position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .badge {
       display: inline-flex;
@@ -143,8 +163,6 @@
       font-weight: 700;
       color: var(--accent-bright);
       margin-bottom: 32px;
-      transform: rotate(-2deg);
-      box-shadow: 3px 3px 0px var(--border-comic);
     }
     .badge::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-bright); animation: pulse 2s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
@@ -155,14 +173,12 @@
       letter-spacing: 4px;
       line-height: 1.05;
       margin-bottom: 24px;
-      text-shadow: 4px 4px 0px rgba(0,0,0,0.4);
     }
     h1 .gradient {
       background: linear-gradient(135deg, var(--orange), var(--amber), var(--yellow));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      filter: drop-shadow(3px 3px 0px rgba(0,0,0,0.3));
     }
     .hero-sub {
       font-size: 20px;
@@ -222,8 +238,7 @@
       font-size: 15px;
       background: var(--bg-code);
       border: 2px solid var(--border-comic);
-      box-shadow: 4px 4px 0px var(--border-comic);
-      padding: 14px 28px;
+            padding: 14px 28px;
       color: var(--text-secondary);
       cursor: pointer;
       transition: all 0.15s;
@@ -240,10 +255,9 @@
       font-size: 12px;
       color: var(--accent);
       opacity: 0;
-      transition: opacity 0.2s;
+      transition: opacity 0.3s;
       pointer-events: none;
     }
-    .install-cmd:hover .copy-hint,
     .install-cmd.copied .copy-hint { opacity: 1; }
 
     .code-window {
@@ -256,7 +270,6 @@
       margin-left: auto;
       margin-right: auto;
       text-align: left;
-      transform: rotate(-0.5deg);
     }
     .code-header {
       display: flex;
@@ -296,14 +309,12 @@
       background: var(--accent-glow);
       padding: 4px 16px;
       border: 2px solid var(--accent-dim);
-      transform: rotate(-1deg);
     }
     h2 {
       font-family: 'Bangers', cursive;
       font-size: clamp(36px, 5vw, 56px);
       letter-spacing: 3px;
       margin-bottom: 16px;
-      text-shadow: 3px 3px 0px rgba(0,0,0,0.3);
     }
     .section-desc {
       color: var(--text-secondary);
@@ -327,10 +338,7 @@
     }
     .feature-card:hover {
       transform: translate(-3px, -3px) !important;
-      box-shadow: 9px 9px 0px var(--border-comic);
     }
-    .feature-card:nth-child(odd) { transform: rotate(-0.3deg); }
-    .feature-card:nth-child(even) { transform: rotate(0.3deg); }
     .feature-icon {
       width: 52px;
       height: 52px;
@@ -339,7 +347,6 @@
       justify-content: center;
       margin-bottom: 20px;
       border: 2px solid var(--border-comic);
-      box-shadow: 3px 3px 0px var(--border-comic);
     }
     .feature-icon.orange { background: rgba(249, 115, 22, 0.15); color: var(--orange); }
     .feature-icon.amber { background: rgba(245, 158, 11, 0.15); color: var(--amber); }
@@ -426,7 +433,6 @@
       font-family: 'Bangers', cursive;
       letter-spacing: 1px;
       border: 2px solid var(--border-comic);
-      box-shadow: 2px 2px 0px var(--border-comic);
     }
     .usecase.uc-orange .tag { background: rgba(249, 115, 22, 0.15); color: var(--orange); }
     .usecase.uc-amber .tag { background: rgba(245, 158, 11, 0.15); color: var(--amber); }
@@ -448,31 +454,23 @@
     }
 
     .stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 24px;
-      padding: 48px 0;
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      padding: 0;
     }
     .stat {
       text-align: center;
-      padding: 24px;
-      border: 2px solid var(--border-comic);
-      box-shadow: var(--shadow-comic);
-      background: var(--bg-card);
     }
     .stat-value {
       font-family: 'Bangers', cursive;
-      font-size: 56px;
-      letter-spacing: 2px;
-      background: linear-gradient(135deg, var(--orange), var(--amber), var(--yellow));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      font-size: 36px;
+      letter-spacing: 1px;
+      color: var(--accent-bright);
     }
     .stat-label {
-      font-size: 14px;
+      font-size: 13px;
       color: var(--text-muted);
-      margin-top: 4px;
       font-weight: 700;
     }
 
@@ -487,8 +485,8 @@
       border: 2px solid var(--border-comic);
       box-shadow: var(--shadow-comic);
     }
-    .comp-card.before { background: var(--bg-card); transform: rotate(0.5deg); }
-    .comp-card.after { background: linear-gradient(135deg, rgba(249,115,22,0.05), rgba(245,158,11,0.05)); border-color: var(--accent-dim); transform: rotate(-0.5deg); }
+    .comp-card.before { background: var(--bg-card); }
+    .comp-card.after { background: linear-gradient(135deg, rgba(249,115,22,0.05), rgba(245,158,11,0.05)); border-color: var(--accent-dim); }
     .comp-card h3 { font-family: 'Bangers', cursive; font-size: 18px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 20px; }
     .comp-card.before h3 { color: var(--text-muted); }
     .comp-card.after h3 { color: var(--accent-bright); }
@@ -588,7 +586,6 @@
       justify-content: center;
       background: #cb3837;
       border: 2px solid var(--border-comic);
-      box-shadow: 3px 3px 0px var(--border-comic);
       flex-shrink: 0;
     }
 
@@ -636,33 +633,7 @@
 </head>
 <body>
 
-<div class="comic-bg"></div>
-<div class="glow-orb orange"></div>
-<div class="glow-orb amber"></div>
-<div class="glow-orb red"></div>
 
-<div class="starburst" style="top:320px;left:5%;font-size:48px;transform:rotate(-15deg)">POW!</div>
-<div class="starburst" style="top:1400px;right:3%;font-size:36px;transform:rotate(8deg)">ZAP!</div>
-<div class="starburst" style="top:2800px;left:8%;font-size:42px;transform:rotate(-5deg)">BAM!</div>
-
-<!-- Nav -->
-<nav>
-  <div class="container">
-    <div class="logo">CLAUDE<span>-CONNECTOR</span></div>
-    <div class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#usecases">Use Cases</a>
-      <a href="#how">How It Works</a>
-      <a href="#start">Get Started</a>
-      <a href="https://www.npmjs.com/package/@scottwalker/claude-connector" class="btn-nav" style="background:#cb3837">
-        <i data-lucide="package" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px"></i>npm
-      </a>
-      <a href="https://github.com/scott-walker/claude-connector" class="btn-nav">
-        <i data-lucide="github" style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:4px"></i>GitHub
-      </a>
-    </div>
-  </div>
-</nav>
 
 <!-- Hero -->
 <section class="hero">
@@ -694,6 +665,13 @@
       </div>
     </div>
 
+    <div class="stats" style="margin-top:40px">
+      <div class="stat"><div class="stat-value">0</div><div class="stat-label">Dependencies</div></div>
+      <div class="stat"><div class="stat-value">89</div><div class="stat-label">Tests</div></div>
+      <div class="stat"><div class="stat-value">45+</div><div class="stat-label">CLI flags</div></div>
+      <div class="stat"><div class="stat-value">32kb</div><div class="stat-label">Size</div></div>
+    </div>
+
     <div class="code-window">
       <div class="code-header">
         <div class="code-dot red"></div>
@@ -703,7 +681,7 @@
       </div>
 <pre><span class="kw">import</span> { Claude } <span class="kw">from</span> <span class="str">'@scottwalker/claude-connector'</span>
 
-<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({ <span class="prop">useSdk</span>: <span class="kw">true</span>, <span class="prop">model</span>: <span class="str">'sonnet'</span> })
+<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({ <span class="prop">model</span>: <span class="str">'sonnet'</span> })
 <span class="kw">await</span> claude.<span class="fn">init</span>()
 
 <span class="cm">// Ask anything, get answers instantly</span>
@@ -713,121 +691,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
   </div>
 </section>
 
-<!-- Stats -->
-<section>
-  <div class="container">
-    <div class="stats">
-      <div class="stat animate-in"><div class="stat-value">0</div><div class="stat-label">Runtime dependencies</div></div>
-      <div class="stat animate-in"><div class="stat-value">89</div><div class="stat-label">Tests passing</div></div>
-      <div class="stat animate-in"><div class="stat-value">45+</div><div class="stat-label">CLI flags supported</div></div>
-      <div class="stat animate-in"><div class="stat-value">32kb</div><div class="stat-label">Package size</div></div>
-    </div>
-  </div>
-</section>
 
-<!-- Features -->
-<section id="features">
-  <div class="container">
-    <div class="section-label">Features</div>
-    <h2>Everything Claude Code can do.<br>Now programmable.</h2>
-    <p class="section-desc">Full access to Claude Code's capabilities through a typed TypeScript API. No features left behind.</p>
-
-    <div class="features-grid">
-      <div class="feature-card animate-in">
-        <div class="feature-icon orange"><i data-lucide="zap" style="width:24px;height:24px"></i></div>
-        <h3>Persistent SDK Sessions</h3>
-        <p>Initialize once, query instantly. The SDK keeps a warm session running &mdash; no cold start on every question. See real-time init stages: <code>importing</code> &rarr; <code>creating</code> &rarr; <code>connecting</code> &rarr; <code>ready</code>.</p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon amber"><i data-lucide="radio" style="width:24px;height:24px"></i></div>
-        <h3>Real-time Streaming</h3>
-        <p>Watch Claude think. Stream responses word-by-word, see which tools are being used, and react to events as they happen. Built on async iterators &mdash; just <code>for await</code>.</p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon yellow"><i data-lucide="messages-square" style="width:24px;height:24px"></i></div>
-        <h3>Multi-turn Sessions</h3>
-        <p>Have conversations, not one-shots. Sessions remember context between queries. Resume later by session ID. Fork conversations to explore different paths.</p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon red"><i data-lucide="layers" style="width:24px;height:24px"></i></div>
-        <h3>Parallel Agents</h3>
-        <p>Run multiple Claude instances simultaneously. Analyze code in one, run tests in another, check docs in a third. One line: <code>claude.parallel([...])</code>.</p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon orange"><i data-lucide="timer" style="width:24px;height:24px"></i></div>
-        <h3>Recurring Tasks</h3>
-        <p>Schedule Claude to run on intervals &mdash; like <code>/loop</code> but from your code. Monitor deployments, poll CI status, or run periodic code reviews. <code>claude.loop('5m', ...)</code></p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon amber"><i data-lucide="puzzle" style="width:24px;height:24px"></i></div>
-        <h3>MCP Servers & Subagents</h3>
-        <p>Connect to Model Context Protocol servers. Define custom subagents with specific tools, models, and permissions. Full Claude Code agent ecosystem from code.</p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon yellow"><i data-lucide="braces" style="width:24px;height:24px"></i></div>
-        <h3>Structured Output</h3>
-        <p>Pass a JSON Schema, get validated JSON back. Extract data, parse codebases, generate configs &mdash; all type-safe. No string parsing, no regex, no prayers.</p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon red"><i data-lucide="shield" style="width:24px;height:24px"></i></div>
-        <h3>Permission Control</h3>
-        <p>Full control over what Claude can do. <code>plan</code> mode for read-only analysis. <code>acceptEdits</code> for autonomous coding. Allowlists, denylists, tool-level control with glob patterns.</p>
-      </div>
-
-      <div class="feature-card animate-in">
-        <div class="feature-icon orange"><i data-lucide="repeat" style="width:24px;height:24px"></i></div>
-        <h3>Swappable Backends</h3>
-        <p>Today: CLI and SDK executors. Tomorrow: whatever Anthropic ships next. The <code>IExecutor</code> abstraction means your code never changes &mdash; only the transport does.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Use Cases -->
-<section id="usecases" style="background: var(--bg-elevated);">
-  <div class="container">
-    <div class="section-label">Use Cases</div>
-    <h2>What can you build?</h2>
-    <p class="section-desc">claude-connector turns Claude Code into a building block. Here's what people are making.</p>
-
-    <div class="usecases">
-      <div class="usecase uc-orange">
-        <div class="uc-number">01</div>
-        <h3><i data-lucide="git-pull-request" style="width:20px;height:20px;vertical-align:middle;margin-right:6px"></i>CI/CD Code Review</h3>
-        <p>Hook into your pipeline. On every PR, Claude analyzes the diff, finds bugs, suggests improvements, and posts comments. Runs in <code>plan</code> mode &mdash; read-only, zero risk.</p>
-        <span class="tag">DevOps</span>
-      </div>
-
-      <div class="usecase uc-amber">
-        <div class="uc-number">02</div>
-        <h3><i data-lucide="wrench" style="width:20px;height:20px;vertical-align:middle;margin-right:6px"></i>Internal Dev Tools</h3>
-        <p>Build a Slack bot that answers questions about your codebase. A dashboard that generates reports. A CLI that scaffolds new services. Claude Code as your backend brain.</p>
-        <span class="tag">Platform Engineering</span>
-      </div>
-
-      <div class="usecase uc-yellow">
-        <div class="uc-number">03</div>
-        <h3><i data-lucide="arrow-right-left" style="width:20px;height:20px;vertical-align:middle;margin-right:6px"></i>Automated Migrations</h3>
-        <p>Point Claude at a directory and tell it to migrate from React class components to hooks. Or from Express to Fastify. Or from JavaScript to TypeScript. Run it overnight, review in the morning.</p>
-        <span class="tag">Refactoring</span>
-      </div>
-
-      <div class="usecase uc-red">
-        <div class="uc-number">04</div>
-        <h3><i data-lucide="bot" style="width:20px;height:20px;vertical-align:middle;margin-right:6px"></i>Multi-Agent Orchestration</h3>
-        <p>One agent reviews code. Another writes tests. A third updates documentation. Run them in parallel with <code>claude.parallel()</code>. Combine their outputs. Build the AI team you always wanted.</p>
-        <span class="tag">AI Workflows</span>
-      </div>
-    </div>
-  </div>
-</section>
 
 <!-- Before/After -->
 <section id="how">
@@ -850,7 +714,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
       </div>
       <div class="comp-card after">
         <h3><i data-lucide="sparkles" style="width:16px;height:16px;vertical-align:middle;margin-right:6px"></i>After &mdash; claude-connector</h3>
-<pre><span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({ <span class="prop">useSdk</span>: <span class="kw">true</span> })
+<pre><span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>(())
 <span class="kw">await</span> claude.<span class="fn">init</span>()
 
 <span class="kw">const</span> session = claude.<span class="fn">session</span>()
@@ -893,7 +757,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
       <p>Install the package, import it, and go. Works with your existing Claude Code subscription.</p>
     </div>
 
-    <div class="code-window" style="max-width:650px;margin:48px auto 48px;text-align:left;transform:rotate(0.5deg)">
+    <div class="code-window" style="max-width:650px;margin:48px auto 48px;text-align:left">
       <div class="code-header">
         <div class="code-dot red"></div>
         <div class="code-dot yellow"></div>
@@ -908,7 +772,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
 <span class="op">$</span> pnpm add @scottwalker/claude-connector</pre>
     </div>
 
-    <div class="code-window" style="max-width:650px;margin:0 auto 48px;text-align:left;transform:rotate(-0.3deg)">
+    <div class="code-window" style="max-width:650px;margin:0 auto 48px;text-align:left">
       <div class="code-header">
         <div class="code-dot red"></div>
         <div class="code-dot yellow"></div>
@@ -917,7 +781,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
       </div>
 <pre><span class="kw">import</span> { Claude } <span class="kw">from</span> <span class="str">'@scottwalker/claude-connector'</span>
 
-<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({ <span class="prop">useSdk</span>: <span class="kw">true</span>, <span class="prop">model</span>: <span class="str">'sonnet'</span> })
+<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({ <span class="prop">model</span>: <span class="str">'sonnet'</span> })
 <span class="kw">await</span> claude.<span class="fn">init</span>()
 
 <span class="cm">// That's it. Ask anything.</span>
