@@ -1,8 +1,9 @@
 /**
- * Interactive chat with Claude Code via claude-connector.
+ * Interactive chat with Claude Code via claude-connector (SDK mode).
  *
- * A real-world example: ask questions in the terminal and get answers.
- * Uses sessions to maintain conversation context between messages.
+ * Uses the persistent SDK session for fast responses.
+ * The first time you run it, there's a one-time initialization (~5-10s).
+ * After that, each question gets answered near-instantly.
  *
  * Usage:
  *   cd examples/interactive-chat
@@ -31,10 +32,28 @@ async function main() {
   console.log('╚══════════════════════════════════════════════╝');
   console.log();
 
+  // SDK mode: persistent session, fast queries after init
   const claude = new Claude({
+    useSdk: true,
+    model: 'sonnet',
     permissionMode: 'plan',   // read-only — safe for a chat demo
-    maxTurns: 3,              // limit agent loops per question
+    maxTurns: 3,
   });
+
+  // Show initialization progress
+  claude.on('init:stage', (stage, message) => {
+    const icons: Record<string, string> = {
+      importing: '[1/4]',
+      creating: '[2/4]',
+      connecting: '[3/4]',
+      ready: '[4/4]',
+    };
+    console.log(`  ${icons[stage] ?? '[ - ]'} ${message}`);
+  });
+
+  console.log('Initializing Claude Code session...\n');
+  await claude.init();
+  console.log();
 
   const session = claude.session();
 
@@ -71,6 +90,7 @@ async function main() {
   }
 
   console.log('\nBye!');
+  claude.close();
   rl.close();
 }
 

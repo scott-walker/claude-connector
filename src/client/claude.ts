@@ -2,6 +2,7 @@ import type { ClientOptions, QueryOptions, QueryResult, StreamEvent } from '../t
 import type { SessionOptions } from '../types/session.js';
 import type { IExecutor } from '../executor/interface.js';
 import { CliExecutor } from '../executor/cli-executor.js';
+import { SdkExecutor, type InitStage, type SdkExecutorOptions } from '../executor/sdk-executor.js';
 import { buildArgs, mergeOptions, resolveEnv } from '../builder/args-builder.js';
 import { validateClientOptions, validateQueryOptions, validatePrompt } from '../utils/validation.js';
 import { Session } from './session.js';
@@ -13,26 +14,25 @@ import { Scheduler, type ScheduledJob } from '../scheduler/scheduler.js';
  * `Claude` is a **facade** that orchestrates the executor, argument builder,
  * and parsers behind a clean, minimal API.
  *
- * ## Design principles
+ * ## Execution modes
  *
- * - **Immutable configuration**: options are frozen at construction time.
- *   Per-query overrides are applied non-destructively.
- * - **Executor abstraction**: the client delegates all I/O to an {@link IExecutor}.
- *   Default is {@link CliExecutor}; pass a custom executor for testing or
- *   future transport mechanisms.
- * - **Stateless queries**: each `query()` / `stream()` call is independent.
- *   For stateful conversations, use `session()`.
+ * - **CLI mode** (default): each query spawns a new `claude -p` process.
+ *   Simple, no warm-up needed, but slower for interactive use.
+ *
+ * - **SDK mode** (`useSdk: true`): creates a persistent session via the
+ *   Claude Agent SDK. First query requires warm-up (~5-10s), but subsequent
+ *   queries are near-instant. Best for interactive and high-throughput use.
  *
  * @example
  * ```ts
- * const claude = new Claude({
- *   executable: '/usr/local/bin/claude',
- *   model: 'sonnet',
- *   permissionMode: 'acceptEdits',
- * })
+ * // CLI mode (default)
+ * const claude = new Claude({ model: 'sonnet' })
  *
- * const result = await claude.query('Find bugs in auth.ts')
- * console.log(result.text)
+ * // SDK mode (persistent session, fast queries)
+ * const claude = new Claude({ useSdk: true, model: 'sonnet' })
+ * claude.on('init:stage', (stage, msg) => console.log(`[${stage}] ${msg}`))
+ * await claude.init()  // warm up once
+ * const result = await claude.query('Fix bugs')  // fast!
  * ```
  */
 export class Claude {
@@ -42,26 +42,87 @@ export class Claude {
   /** Executor responsible for running CLI commands. */
   private readonly executor: IExecutor;
 
+  /** SdkExecutor reference (only when useSdk: true) for lifecycle control. */
+  private readonly sdkExecutor: SdkExecutor | null = null;
+
   constructor(options: ClientOptions = {}, executor?: IExecutor) {
     validateClientOptions(options);
     this.options = Object.freeze({ ...options });
-    this.executor = executor ?? new CliExecutor(options.executable);
+
+    if (executor) {
+      this.executor = executor;
+    } else if (options.useSdk) {
+      const sdkOpts: SdkExecutorOptions = {
+        model: options.model,
+        pathToClaudeCodeExecutable: options.executable,
+        permissionMode: options.permissionMode,
+        allowedTools: options.allowedTools ? [...options.allowedTools] : undefined,
+        disallowedTools: options.disallowedTools ? [...options.disallowedTools] : undefined,
+        env: options.env,
+      };
+      this.sdkExecutor = new SdkExecutor(sdkOpts);
+      this.executor = this.sdkExecutor;
+    } else {
+      this.executor = new CliExecutor(options.executable);
+    }
+  }
+
+  /**
+   * Initialize the SDK session (warm up).
+   *
+   * Only needed when `useSdk: true`. In CLI mode this is a no-op.
+   *
+   * Subscribe to initialization events before calling:
+   * ```ts
+   * claude.on('init:stage', (stage, message) => {
+   *   console.log(`[${stage}] ${message}`)
+   * })
+   * claude.on('init:ready', () => console.log('Ready!'))
+   * claude.on('init:error', (err) => console.error(err))
+   *
+   * await claude.init()
+   * ```
+   *
+   * Safe to call multiple times — only initializes once.
+   */
+  async init(): Promise<void> {
+    if (this.sdkExecutor) {
+      await this.sdkExecutor.init();
+    }
+  }
+
+  /** Whether the SDK session is initialized and ready (always true for CLI mode). */
+  get ready(): boolean {
+    if (this.sdkExecutor) return this.sdkExecutor.ready;
+    return true;
+  }
+
+  /**
+   * Subscribe to initialization events.
+   *
+   * Events:
+   * - `init:stage` `(stage: InitStage, message: string)` — progress updates
+   *    Stages: `'importing'` → `'creating'` → `'connecting'` → `'ready'`
+   * - `init:ready` — session is warm and queries will be fast
+   * - `init:error` `(error: Error)` — initialization failed
+   *
+   * Only meaningful when `useSdk: true`. In CLI mode, listeners are never called.
+   */
+  on(event: 'init:stage', listener: (stage: InitStage, message: string) => void): this;
+  on(event: 'init:ready', listener: () => void): this;
+  on(event: 'init:error', listener: (error: Error) => void): this;
+  on(event: string, listener: (...args: never[]) => void): this;
+  on(event: string, listener: (...args: never[]) => void): this {
+    if (this.sdkExecutor) {
+      this.sdkExecutor.on(event as 'init:stage', listener as (stage: InitStage, message: string) => void);
+    }
+    return this;
   }
 
   /**
    * Execute a one-shot query and return the complete result.
    *
-   * @param prompt  - The question or instruction for Claude.
-   * @param options - Per-query overrides (model, tools, limits, etc.).
-   * @returns Complete query result with text, usage, session ID.
-   *
-   * @example
-   * ```ts
-   * const result = await claude.query('Refactor the auth module', {
-   *   permissionMode: 'plan',
-   *   maxTurns: 5,
-   * })
-   * ```
+   * In SDK mode, auto-initializes if `init()` hasn't been called yet.
    */
   async query(prompt: string, options?: QueryOptions): Promise<QueryResult> {
     validatePrompt(prompt);
@@ -86,14 +147,6 @@ export class Claude {
    *
    * Returns an async iterable that yields events as they arrive.
    * The final event is always `type: 'result'` or `type: 'error'`.
-   *
-   * @example
-   * ```ts
-   * for await (const event of claude.stream('Rewrite this module')) {
-   *   if (event.type === 'text') process.stdout.write(event.text)
-   *   if (event.type === 'tool_use') console.log(`Using: ${event.toolName}`)
-   * }
-   * ```
    */
   async *stream(prompt: string, options?: QueryOptions): AsyncIterable<StreamEvent> {
     validatePrompt(prompt);
@@ -115,23 +168,6 @@ export class Claude {
 
   /**
    * Create a session for multi-turn conversation.
-   *
-   * Sessions maintain context across queries by using Claude Code's
-   * `--continue` and `--resume` flags.
-   *
-   * @example
-   * ```ts
-   * // New session
-   * const session = claude.session()
-   * await session.query('Analyze the architecture')
-   * await session.query('Now suggest improvements')  // remembers context
-   *
-   * // Resume existing session
-   * const s2 = claude.session({ resume: 'session-id-xxx' })
-   *
-   * // Fork a session
-   * const s3 = claude.session({ resume: 'session-id-xxx', fork: true })
-   * ```
    */
   session(sessionOptions?: SessionOptions): Session {
     return new Session(this.options, this.executor, sessionOptions);
@@ -139,23 +175,6 @@ export class Claude {
 
   /**
    * Schedule a recurring query (equivalent of /loop).
-   *
-   * Since /loop only works in interactive CLI mode, this implements
-   * the same behavior at the Node.js level using setInterval.
-   *
-   * @param interval - Interval string ('5m', '1h', '30s') or milliseconds.
-   * @param prompt   - Query to execute on each tick.
-   * @param options  - Per-query overrides.
-   * @returns A ScheduledJob that can be stopped and emits results.
-   *
-   * @example
-   * ```ts
-   * const job = claude.loop('5m', 'Check deployment status')
-   * job.on('result', (r) => console.log(r.text))
-   * job.on('error', (e) => console.error(e))
-   * // Later:
-   * job.stop()
-   * ```
    */
   loop(interval: string | number, prompt: string, options?: QueryOptions): ScheduledJob {
     const scheduler = new Scheduler(this);
@@ -164,18 +183,6 @@ export class Claude {
 
   /**
    * Run multiple queries in parallel.
-   *
-   * Each query spawns an independent CLI process. Useful for parallelizing
-   * independent tasks across different directories or with different configs.
-   *
-   * @example
-   * ```ts
-   * const [bugs, tests, docs] = await claude.parallel([
-   *   { prompt: 'Find bugs', options: { cwd: './src' } },
-   *   { prompt: 'Run tests', options: { cwd: './tests' } },
-   *   { prompt: 'Check docs', options: { permissionMode: 'plan' } },
-   * ])
-   * ```
    */
   async parallel(
     queries: readonly { prompt: string; options?: QueryOptions }[],
@@ -190,6 +197,16 @@ export class Claude {
    */
   abort(): void {
     this.executor.abort?.();
+  }
+
+  /**
+   * Close the SDK session and free resources.
+   * Only needed when `useSdk: true`. In CLI mode this is a no-op.
+   */
+  close(): void {
+    if (this.sdkExecutor) {
+      this.sdkExecutor.close();
+    }
   }
 
   /**

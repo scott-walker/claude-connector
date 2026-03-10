@@ -40,6 +40,8 @@ export { Session } from './client/session.js';
 // ── Executor abstraction ──────────────────────────────────────────
 export type { IExecutor, ExecuteOptions } from './executor/interface.js';
 export { CliExecutor } from './executor/cli-executor.js';
+export { SdkExecutor } from './executor/sdk-executor.js';
+export type { SdkExecutorOptions, SdkExecutorEvents, InitStage } from './executor/sdk-executor.js';
 
 // ── Scheduler ─────────────────────────────────────────────────────
 export { Scheduler, ScheduledJob } from './scheduler/scheduler.js';

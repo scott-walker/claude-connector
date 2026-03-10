@@ -1,8 +1,7 @@
 /**
- * Interactive chat with real-time streaming responses.
+ * Interactive chat with real-time streaming responses (SDK mode).
  *
- * Same as chat.ts but uses stream() instead of query() —
- * you see Claude's response appear word by word in real time.
+ * Uses the persistent SDK session — warm up once, then stream fast.
  *
  * Usage:
  *   cd examples/interactive-chat
@@ -32,12 +31,28 @@ async function main() {
   console.log();
 
   const claude = new Claude({
+    useSdk: true,
+    model: 'sonnet',
     permissionMode: 'plan',
     maxTurns: 3,
   });
 
-  // For streaming sessions, we track session ID manually
-  // and use --resume on subsequent queries.
+  // Show initialization progress
+  claude.on('init:stage', (stage, message) => {
+    const icons: Record<string, string> = {
+      importing: '[1/4]',
+      creating: '[2/4]',
+      connecting: '[3/4]',
+      ready: '[4/4]',
+    };
+    console.log(`  ${icons[stage] ?? '[ - ]'} ${message}`);
+  });
+
+  console.log('Initializing Claude Code session...\n');
+  await claude.init();
+  console.log();
+
+  // For streaming, we track session ID manually
   let sessionId: string | null = null;
 
   while (true) {
@@ -50,7 +65,6 @@ async function main() {
     try {
       process.stdout.write('\n\x1b[33mclaude>\x1b[0m ');
 
-      // Build a session-aware client for streaming
       const sessionClaude = sessionId
         ? claude.session({ resume: sessionId })
         : claude.session();
@@ -96,6 +110,7 @@ async function main() {
   }
 
   console.log('\nBye!');
+  claude.close();
   rl.close();
 }
 
