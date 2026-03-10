@@ -10,8 +10,8 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     :root {
-      --bg: #1a1208;
-      --bg-elevated: #211809;
+      --bg: #1b1000;
+      --bg-elevated: #1b1000;
       --bg-card: #2a1e0e;
       --bg-code: #1e1610;
       --border: #3d2e18;
@@ -290,7 +290,13 @@
       font-family: 'JetBrains Mono', monospace;
       font-size: 13.5px;
       line-height: 1.8;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-highlight) transparent;
     }
+    pre::-webkit-scrollbar { height: 6px; }
+    pre::-webkit-scrollbar-track { background: transparent; }
+    pre::-webkit-scrollbar-thumb { background: var(--border-highlight); border-radius: 3px; }
+    pre::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
     .kw { color: var(--orange); }
     .str { color: var(--yellow); }
     .fn { color: var(--accent-bright); }
@@ -620,17 +626,37 @@
     .animate-in:nth-child(9) { animation-delay: 0.64s; }
 
     @media (max-width: 768px) {
-      .stats { grid-template-columns: repeat(2, 1fr); }
+      html { scroll-snap-type: none; }
+      section { min-height: auto; padding: 48px 0; }
+      .container { padding: 0 16px; }
+      h1 { font-size: 40px; letter-spacing: 1px; }
+      h2 { font-size: 28px; letter-spacing: 1px; }
+      .hero { padding-top: 48px; padding-bottom: 48px; min-height: auto; }
+      .hero-sub { font-size: 16px; margin-bottom: 32px; }
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .btn { justify-content: center; padding: 12px 20px; font-size: 14px; }
+      .install-bar { margin-top: 32px; }
+      .install-cmd { font-size: 12px; padding: 12px 16px; word-break: break-all; }
+      .stats { flex-wrap: wrap; gap: 20px; justify-content: center; }
+      .stat-value { font-size: 28px; }
+      .stat-label { font-size: 11px; }
+      .code-window { transform: none !important; margin-top: 32px; }
+      pre { font-size: 11px; padding: 16px; line-height: 1.6; }
       .comparison { grid-template-columns: 1fr; }
-      nav .nav-links { display: none; }
-      .hero { padding-top: 140px; }
-      section { padding: 60px 0; }
-      .speech-bubble { padding: 32px; margin-left: 16px; margin-right: 16px; }
-      .code-window { transform: none !important; }
-      h1 { letter-spacing: 2px; }
-      .npm-banner { flex-direction: column; text-align: center; align-items: center; padding: 24px; }
-      .npm-banner-text { flex-direction: column; text-align: center; gap: 16px; }
-      .npm-banner-text p { font-size: 12px; }
+      .comp-card { padding: 20px; }
+      .comp-card h3 { font-size: 14px; }
+      .section-label { font-size: 13px; letter-spacing: 2px; padding: 3px 12px; }
+      .section-desc { font-size: 15px; margin-bottom: 32px; }
+      .arch-diagram { font-size: 11px; padding: 24px 16px; }
+      .speech-bubble { padding: 24px; margin-left: 0; margin-right: 0; }
+      .speech-bubble h2 { font-size: 24px; }
+      .speech-bubble p { font-size: 15px; }
+      .npm-banner { flex-direction: column; text-align: center; align-items: center; padding: 20px 16px; gap: 16px; }
+      .npm-banner-text { flex-direction: column; text-align: center; gap: 12px; }
+      .npm-banner-text h3 { font-size: 20px; }
+      .npm-banner-text p { font-size: 11px; }
+      .cta { padding: 48px 0; }
+      footer { padding: 24px 0; font-size: 12px; }
     }
   </style>
 </head>
@@ -696,6 +722,42 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
 
 
 
+<!-- API Capabilities -->
+<section>
+  <div class="container">
+    <div class="section-label"><i data-lucide="list" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Full API</div>
+    <h2>45+ CLI flags. One typed API.</h2>
+    <p class="section-desc">Everything Claude Code can do — now from your code.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px 32px;font-size:14px;font-weight:700;color:var(--text-secondary)">
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="zap" style="width:14px;height:14px;vertical-align:middle"></i></span> Persistent SDK sessions</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="radio" style="width:14px;height:14px;vertical-align:middle"></i></span> Real-time streaming</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="messages-square" style="width:14px;height:14px;vertical-align:middle"></i></span> Multi-turn sessions</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="git-fork" style="width:14px;height:14px;vertical-align:middle"></i></span> Fork &amp; resume sessions</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="layers" style="width:14px;height:14px;vertical-align:middle"></i></span> Parallel agents</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="timer" style="width:14px;height:14px;vertical-align:middle"></i></span> Recurring tasks (loop)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="braces" style="width:14px;height:14px;vertical-align:middle"></i></span> Structured JSON output</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="shield" style="width:14px;height:14px;vertical-align:middle"></i></span> Permission modes (plan/edit/bypass)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="wrench" style="width:14px;height:14px;vertical-align:middle"></i></span> Tool allow/deny with globs</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="plug" style="width:14px;height:14px;vertical-align:middle"></i></span> MCP server connections</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="bot" style="width:14px;height:14px;vertical-align:middle"></i></span> Custom subagents</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="git-branch" style="width:14px;height:14px;vertical-align:middle"></i></span> Git worktree isolation</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="paperclip" style="width:14px;height:14px;vertical-align:middle"></i></span> Piped input (files, images, logs)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="cpu" style="width:14px;height:14px;vertical-align:middle"></i></span> Model selection (opus/sonnet/haiku)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="gauge" style="width:14px;height:14px;vertical-align:middle"></i></span> Effort level (low/medium/high)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="life-buoy" style="width:14px;height:14px;vertical-align:middle"></i></span> Fallback model on failure</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="file-text" style="width:14px;height:14px;vertical-align:middle"></i></span> System prompt override/append</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="ban" style="width:14px;height:14px;vertical-align:middle"></i></span> Max turns &amp; budget limits</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="folder-open" style="width:14px;height:14px;vertical-align:middle"></i></span> Additional working directories</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="webhook" style="width:14px;height:14px;vertical-align:middle"></i></span> Lifecycle hooks (pre/post tool use)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="variable" style="width:14px;height:14px;vertical-align:middle"></i></span> Custom env variables</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="repeat" style="width:14px;height:14px;vertical-align:middle"></i></span> Swappable executor backends</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="alert-triangle" style="width:14px;height:14px;vertical-align:middle"></i></span> Typed error hierarchy</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="package" style="width:14px;height:14px;vertical-align:middle"></i></span> Zero runtime dependencies</div>
+    </div>
+  </div>
+</section>
+
 <!-- Before/After -->
 <section id="how">
   <div class="container">
@@ -732,7 +794,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
 </section>
 
 <!-- Architecture -->
-<section style="background: var(--bg-elevated);">
+<section>
   <div class="container">
     <div class="section-label"><i data-lucide="boxes" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Architecture</div>
     <h2>Built to last</h2>
@@ -752,7 +814,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
 </section>
 
 <!-- Loop -->
-<section style="background: var(--bg-elevated);">
+<section>
   <div class="container">
     <div class="section-label"><i data-lucide="timer" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Recurring Tasks</div>
     <h2>claude.loop()</h2>
@@ -793,6 +855,271 @@ job.<span class="fn">stop</span>()</pre>
 })
 
 <span class="cm">// Supported intervals: '30s', '5m', '2h', '1d', or raw ms</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- Streaming -->
+<section>
+  <div class="container">
+    <div class="section-label"><i data-lucide="radio" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Streaming</div>
+    <h2>Real-time responses</h2>
+    <p class="section-desc">Watch Claude think word-by-word. React to tool calls, errors, and results as they happen.</p>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>stream.ts</span>
+      </div>
+<pre><span class="kw">for await</span> (<span class="kw">const</span> event <span class="kw">of</span> claude.<span class="fn">stream</span>(<span class="str">'Refactor the auth module'</span>)) {
+  <span class="kw">switch</span> (event.<span class="prop">type</span>) {
+    <span class="kw">case</span> <span class="str">'text'</span>:
+      process.stdout.<span class="fn">write</span>(event.<span class="prop">text</span>)
+      <span class="kw">break</span>
+    <span class="kw">case</span> <span class="str">'tool_use'</span>:
+      console.<span class="fn">log</span>(<span class="str">`[tool: </span>${event.<span class="prop">toolName</span>}<span class="str">]`</span>)
+      <span class="kw">break</span>
+    <span class="kw">case</span> <span class="str">'result'</span>:
+      console.<span class="fn">log</span>(<span class="str">`Done in </span>${event.<span class="prop">durationMs</span>}<span class="str">ms`</span>)
+      console.<span class="fn">log</span>(<span class="str">`Tokens: </span>${event.<span class="prop">usage</span>.<span class="prop">inputTokens</span>}<span class="str">in / </span>${event.<span class="prop">usage</span>.<span class="prop">outputTokens</span>}<span class="str">out`</span>)
+      <span class="kw">break</span>
+    <span class="kw">case</span> <span class="str">'error'</span>:
+      console.<span class="fn">error</span>(event.<span class="prop">message</span>)
+      <span class="kw">break</span>
+  }
+}</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>stream-session.ts</span>
+      </div>
+<pre><span class="cm">// Streaming works with sessions too</span>
+<span class="kw">const</span> session = claude.<span class="fn">session</span>()
+
+<span class="kw">for await</span> (<span class="kw">const</span> event <span class="kw">of</span> session.<span class="fn">stream</span>(<span class="str">'Analyze this project'</span>)) {
+  <span class="kw">if</span> (event.<span class="prop">type</span> === <span class="str">'text'</span>) process.stdout.<span class="fn">write</span>(event.<span class="prop">text</span>)
+}
+
+<span class="cm">// Continue the conversation — Claude remembers context</span>
+<span class="kw">for await</span> (<span class="kw">const</span> event <span class="kw">of</span> session.<span class="fn">stream</span>(<span class="str">'Now fix the bugs you found'</span>)) {
+  <span class="kw">if</span> (event.<span class="prop">type</span> === <span class="str">'text'</span>) process.stdout.<span class="fn">write</span>(event.<span class="prop">text</span>)
+}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- MCP -->
+<section>
+  <div class="container">
+    <div class="section-label"><i data-lucide="plug" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> MCP Servers</div>
+    <h2>Connect any MCP server</h2>
+    <p class="section-desc">Extend Claude with external tools via Model Context Protocol — databases, browsers, APIs, and more.</p>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>mcp-inline.ts</span>
+      </div>
+<pre><span class="cm">// Define MCP servers inline</span>
+<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({
+  <span class="prop">mcpServers</span>: {
+    <span class="prop">playwright</span>: {
+      <span class="prop">command</span>: <span class="str">'npx'</span>,
+      <span class="prop">args</span>: [<span class="str">'@playwright/mcp@latest'</span>],
+    },
+    <span class="prop">database</span>: {
+      <span class="prop">type</span>: <span class="str">'http'</span>,
+      <span class="prop">url</span>: <span class="str">'http://localhost:3001/mcp'</span>,
+    },
+    <span class="prop">github</span>: {
+      <span class="prop">command</span>: <span class="str">'npx'</span>,
+      <span class="prop">args</span>: [<span class="str">'@modelcontextprotocol/server-github'</span>],
+      <span class="prop">env</span>: { <span class="prop">GITHUB_TOKEN</span>: process.<span class="prop">env</span>.<span class="prop">GITHUB_TOKEN</span> },
+    },
+  },
+})</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>mcp-config.ts</span>
+      </div>
+<pre><span class="cm">// Or load from a config file</span>
+<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({
+  <span class="prop">mcpConfig</span>: <span class="str">'./mcp.json'</span>,
+})
+
+<span class="cm">// Now Claude can browse the web, query your DB,</span>
+<span class="cm">// create GitHub issues — all from your code</span>
+<span class="kw">const</span> result = <span class="kw">await</span> claude.<span class="fn">query</span>(<span class="str">'Open the login page and test the auth flow'</span>)</pre>
+    </div>
+  </div>
+</section>
+
+<!-- Tools -->
+<section>
+  <div class="container">
+    <div class="section-label"><i data-lucide="wrench" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Tools</div>
+    <h2>Control what Claude can do</h2>
+    <p class="section-desc">Allow or deny specific tools. Use glob patterns for fine-grained control over Bash commands.</p>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>tools-allow.ts</span>
+      </div>
+<pre><span class="cm">// Only allow reading and searching — no edits, no bash</span>
+<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({
+  <span class="prop">allowedTools</span>: [<span class="str">'Read'</span>, <span class="str">'Glob'</span>, <span class="str">'Grep'</span>],
+  <span class="prop">permissionMode</span>: <span class="str">'plan'</span>,
+})</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>tools-bash.ts</span>
+      </div>
+<pre><span class="cm">// Allow Bash but only for specific commands</span>
+<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({
+  <span class="prop">allowedTools</span>: [
+    <span class="str">'Read'</span>, <span class="str">'Edit'</span>, <span class="str">'Write'</span>,
+    <span class="str">'Bash(npm run *)'</span>,       <span class="cm">// only npm scripts</span>
+    <span class="str">'Bash(git status)'</span>,      <span class="cm">// only git status</span>
+    <span class="str">'Bash(npx prettier *)'</span>,  <span class="cm">// only prettier</span>
+  ],
+})</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>tools-deny.ts</span>
+      </div>
+<pre><span class="cm">// Allow everything except web access and file deletion</span>
+<span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({
+  <span class="prop">disallowedTools</span>: [<span class="str">'WebFetch'</span>, <span class="str">'WebSearch'</span>],
+  <span class="prop">permissionMode</span>: <span class="str">'acceptEdits'</span>,
+})</pre>
+    </div>
+  </div>
+</section>
+
+<!-- Worktrees -->
+<section>
+  <div class="container">
+    <div class="section-label"><i data-lucide="git-branch" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Worktrees</div>
+    <h2>Isolated git worktrees</h2>
+    <p class="section-desc">Run risky refactors in an isolated copy of the repo. Your working tree stays untouched.</p>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>worktree.ts</span>
+      </div>
+<pre><span class="cm">// Run in an isolated worktree — auto-generated branch name</span>
+<span class="kw">const</span> result = <span class="kw">await</span> claude.<span class="fn">query</span>(<span class="str">'Refactor the entire auth module'</span>, {
+  <span class="prop">worktree</span>: <span class="kw">true</span>,
+})
+
+<span class="cm">// Or specify a branch name</span>
+<span class="kw">const</span> result2 = <span class="kw">await</span> claude.<span class="fn">query</span>(<span class="str">'Migrate from Express to Fastify'</span>, {
+  <span class="prop">worktree</span>: <span class="str">'migration/fastify'</span>,
+})</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>parallel-worktrees.ts</span>
+      </div>
+<pre><span class="cm">// Run multiple experiments in parallel — each in its own worktree</span>
+<span class="kw">const</span> [approach1, approach2] = <span class="kw">await</span> claude.<span class="fn">parallel</span>([
+  {
+    <span class="prop">prompt</span>: <span class="str">'Rewrite auth using JWT tokens'</span>,
+    <span class="prop">options</span>: { <span class="prop">worktree</span>: <span class="str">'experiment/jwt'</span> },
+  },
+  {
+    <span class="prop">prompt</span>: <span class="str">'Rewrite auth using session cookies'</span>,
+    <span class="prop">options</span>: { <span class="prop">worktree</span>: <span class="str">'experiment/sessions'</span> },
+  },
+])
+
+<span class="cm">// Compare results, pick the best approach, merge it</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- Attachments -->
+<section>
+  <div class="container">
+    <div class="section-label"><i data-lucide="paperclip" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Attachments</div>
+    <h2>Attach files to your prompt</h2>
+    <p class="section-desc">Pass images, logs, configs, or any data alongside your prompt — just like piping in the terminal.</p>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>analyze-image.ts</span>
+      </div>
+<pre><span class="kw">import</span> { readFileSync } <span class="kw">from</span> <span class="str">'node:fs'</span>
+
+<span class="cm">// Attach an image for analysis</span>
+<span class="kw">const</span> screenshot = <span class="fn">readFileSync</span>(<span class="str">'./bug-screenshot.png'</span>, <span class="str">'base64'</span>)
+<span class="kw">const</span> result = <span class="kw">await</span> claude.<span class="fn">query</span>(<span class="str">'What bug do you see in this screenshot?'</span>, {
+  <span class="prop">input</span>: screenshot,
+})</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>analyze-logs.ts</span>
+      </div>
+<pre><span class="cm">// Attach error logs</span>
+<span class="kw">const</span> logs = <span class="fn">readFileSync</span>(<span class="str">'./error.log'</span>, <span class="str">'utf-8'</span>)
+<span class="kw">const</span> result = <span class="kw">await</span> claude.<span class="fn">query</span>(<span class="str">'Analyze these errors and suggest fixes'</span>, {
+  <span class="prop">input</span>: logs,
+})</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>review-config.ts</span>
+      </div>
+<pre><span class="cm">// Attach any document — configs, CSVs, JSON, etc.</span>
+<span class="kw">const</span> config = <span class="fn">readFileSync</span>(<span class="str">'./docker-compose.yml'</span>, <span class="str">'utf-8'</span>)
+<span class="kw">const</span> result = <span class="kw">await</span> claude.<span class="fn">query</span>(<span class="str">'Review this config for security issues'</span>, {
+  <span class="prop">input</span>: config,
+})</pre>
     </div>
   </div>
 </section>
