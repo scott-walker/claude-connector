@@ -2,7 +2,7 @@
   <img src="etc/logo-rounded.svg" alt="Claude Code — In Your Code" width="350" />
 </p>
 
-# claude-connector
+<h1 align="center">Claude Connector</h1>
 
 Programmatic Node.js interface for [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) CLI.
 
