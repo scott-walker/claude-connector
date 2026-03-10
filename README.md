@@ -389,10 +389,10 @@ const claude = new Claude({ model: 'opus' }, new MockExecutor())
 ## Architecture
 
 ```
-┌─────────┐     ┌─────────────┐     ┌────────────┐     ┌──────────────┐
+┌──────────┐     ┌─────────────┐     ┌─────────────┐     ┌───────────────┐
 │  Claude  │────>│ ArgsBuilder │────>│  IExecutor  │────>│ CLI Process   │
 │ (facade) │     │             │     │ (abstract)  │     │ (claude -p)   │
-└─────────┘     └─────────────┘     └────────────┘     └──────────────┘
+└──────────┘     └─────────────┘     └─────────────┘     └───────────────┘
      │                                    ^
      v                                    |
   Session                          CliExecutor (default)
