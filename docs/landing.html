@@ -566,7 +566,8 @@
     .npm-banner-text {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 24px;
+      text-align: left;
     }
     .npm-banner-text h3 {
       font-family: 'Bangers', cursive;
@@ -627,7 +628,9 @@
       .speech-bubble { padding: 32px; margin-left: 16px; margin-right: 16px; }
       .code-window { transform: none !important; }
       h1 { letter-spacing: 2px; }
-      .npm-banner { flex-direction: column; text-align: center; }
+      .npm-banner { flex-direction: column; text-align: center; align-items: center; padding: 24px; }
+      .npm-banner-text { flex-direction: column; text-align: center; gap: 16px; }
+      .npm-banner-text p { font-size: 12px; }
     }
   </style>
 </head>
@@ -639,7 +642,7 @@
 <section class="hero">
   <div class="container">
     <div class="badge"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Available on npm &mdash; v0.1.0</div>
-    <h1>Claude Code.<br><span class="gradient">In your code.</span></h1>
+    <h1>Claude Code<br><span class="gradient">In your code</span></h1>
     <p class="hero-sub">
       The entire power of Claude Code &mdash; reading files, editing code, running commands, browsing the web &mdash; available as a simple Node.js API. No terminal. No copy-paste. Just <code style="font-family:'JetBrains Mono',monospace;background:var(--bg-code);padding:2px 10px;border:2px solid var(--border-comic);font-size:16px;color:var(--accent-bright)">import</code> and go.
     </p>
@@ -714,7 +717,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
       </div>
       <div class="comp-card after">
         <h3><i data-lucide="sparkles" style="width:16px;height:16px;vertical-align:middle;margin-right:6px"></i>After &mdash; claude-connector</h3>
-<pre><span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>(())
+<pre><span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>()
 <span class="kw">await</span> claude.<span class="fn">init</span>()
 
 <span class="kw">const</span> session = claude.<span class="fn">session</span>()
@@ -735,15 +738,62 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
     <h2>Built to last</h2>
     <p class="section-desc">Clean layers, zero dependencies, swappable backends. When the SDK evolves, your code stays the same.</p>
 
-    <div class="arch-diagram">Your Code
-    &darr;
-<span class="fn">Claude</span> <span class="cm">(facade)</span>
-    &darr;
-<span class="fn">ArgsBuilder</span>  &rarr;  <span class="fn">IExecutor</span>  &rarr;  <span class="str">Claude Code</span>
-                    &uarr;
-           &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
-       <span class="fn">CliExecutor</span>        <span class="fn">SdkExecutor</span>
-       <span class="cm">(spawn CLI)</span>       <span class="cm">(persistent session)</span></div>
+    <div class="arch-diagram">            Your Code
+                |
+         <span class="fn">Claude</span> <span class="cm">(facade)</span>
+                |
+    <span class="fn">ArgsBuilder</span> --&gt; <span class="fn">IExecutor</span> --&gt; <span class="str">Claude Code</span>
+                       |
+              +--------+--------+
+              |                 |
+       <span class="fn">CliExecutor</span>      <span class="fn">SdkExecutor</span>
+       <span class="cm">(spawn CLI)</span>    <span class="cm">(persistent session)</span></div>
+  </div>
+</section>
+
+<!-- Loop -->
+<section style="background: var(--bg-elevated);">
+  <div class="container">
+    <div class="section-label"><i data-lucide="timer" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Recurring Tasks</div>
+    <h2>claude.loop()</h2>
+    <p class="section-desc">Schedule Claude to run on intervals — like cron, but with AI. Monitor, review, report — hands-free.</p>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto 32px;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>monitor.ts</span>
+      </div>
+<pre><span class="cm">// Check CI pipeline every 5 minutes</span>
+<span class="kw">const</span> job = claude.<span class="fn">loop</span>(<span class="str">'5m'</span>, <span class="str">'Check CI status and report failures'</span>)
+
+job.<span class="fn">on</span>(<span class="str">'result'</span>, (result) =&gt; {
+  console.<span class="fn">log</span>(<span class="str">`[</span>${<span class="kw">new</span> <span class="fn">Date</span>().<span class="fn">toISOString</span>()}<span class="str">]`</span>, result.<span class="prop">text</span>)
+})
+
+job.<span class="fn">on</span>(<span class="str">'error'</span>, (err) =&gt; {
+  console.<span class="fn">error</span>(<span class="str">'Check failed:'</span>, err.<span class="prop">message</span>)
+})
+
+<span class="cm">// Stop when done</span>
+job.<span class="fn">stop</span>()</pre>
+    </div>
+
+    <div class="code-window" style="max-width:700px;margin:0 auto;text-align:left">
+      <div class="code-header">
+        <div class="code-dot red"></div>
+        <div class="code-dot yellow"></div>
+        <div class="code-dot green"></div>
+        <span>review-bot.ts</span>
+      </div>
+<pre><span class="cm">// Periodic code review every 2 hours</span>
+<span class="kw">const</span> reviewer = claude.<span class="fn">loop</span>(<span class="str">'2h'</span>, <span class="str">'Review recent commits for bugs and security issues'</span>, {
+  <span class="prop">permissionMode</span>: <span class="str">'plan'</span>,  <span class="cm">// read-only, safe</span>
+})
+
+<span class="cm">// Supported intervals: '30s', '5m', '2h', '1d', or raw ms</span></pre>
+    </div>
   </div>
 </section>
 
