@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="etc/origin.png" alt="Claude Connector" width="350" style="border-radius: 16px" />
+  <picture>
+    <img src="landing/assets/origin.png" alt="Claude Connector" width="250" style="border-radius: 16px" />
+  </picture>
 </p>
-
-<h1 align="center">Claude Connector</h1>
 
 Programmatic Node.js interface for [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) CLI.
 
