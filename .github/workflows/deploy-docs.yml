@@ -1,0 +1,58 @@
+name: Deploy Landing + Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'wiki/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Build VitePress wiki
+      - run: npm run wiki:build
+
+      # Assemble final site:
+      # / → landing (docs/landing.html → index.html + assets)
+      # /wiki/ → VitePress output
+      - name: Assemble site
+        run: |
+          mkdir -p site/wiki
+          cp docs/landing.html site/index.html
+          cp -r docs/assets site/assets
+          cp -r wiki/.vitepress/dist/* site/wiki/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
