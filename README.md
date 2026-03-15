@@ -8,7 +8,7 @@ Programmatic Node.js interface for [Claude Code](https://docs.anthropic.com/en/d
 
 Use Claude Code from your application code — no terminal required. Works with your existing Max/Team/Enterprise subscription.
 
-**[Website](https://scott-walker.github.io/claude-connector/)** | **[API Reference](./docs/API.md)** | **[Architecture](./docs/ARCHITECTURE.md)**
+**[Website](https://scott-walker.github.io/claude-connector/)** | **[Examples](./docs/EXAMPLES.md)** | **[API Reference](./docs/API.md)** | **[Architecture](./docs/ARCHITECTURE.md)**
 
 ---
 
@@ -19,7 +19,7 @@ Claude Code is a powerful AI coding agent, but it only runs in a terminal. **cla
 **Key design decisions:**
 
 - **CLI wrapper, not API client** — uses your local `claude` binary and subscription, not the Anthropic HTTP API
-- **Zero runtime dependencies** — only Node.js built-ins (`child_process`, `events`)
+- **Two execution modes** — persistent SDK session (fast, default) or CLI process spawning (simple)
 - **Executor abstraction** — swap CLI for SDK or HTTP backend without changing your code
 - **Full CLI parity** — exposes all 45+ Claude Code flags through typed options
 
@@ -264,11 +264,11 @@ const claude = new Claude({
 
   // Model
   model: 'opus',                      // 'opus' | 'sonnet' | 'haiku' | full model ID
-  effortLevel: 'high',                // 'low' | 'medium' | 'high'
+  effortLevel: 'high',                // 'low' | 'medium' | 'high' | 'max'
   fallbackModel: 'sonnet',            // auto-fallback on failure
 
   // Permissions
-  permissionMode: 'acceptEdits',      // 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
+  permissionMode: 'acceptEdits',      // 'default' | 'acceptEdits' | 'plan' | 'auto' | 'dontAsk' | 'bypassPermissions'
   allowedTools: ['Read', 'Edit', 'Bash(npm run *)'],
   disallowedTools: ['WebFetch'],
 
@@ -395,13 +395,12 @@ const claude = new Claude({ model: 'opus' }, new MockExecutor())
 └──────────┘     └─────────────┘     └─────────────┘     └───────────────┘
      │                                    ^
      v                                    |
-  Session                          CliExecutor (default)
-  Scheduler                        SdkExecutor (future)
+  Session                          SdkExecutor (default, persistent session)
+  Scheduler                        CliExecutor (useSdk: false, process-per-query)
 ```
 
-- **Zero dependencies** — only `child_process` and `events` from Node.js
+- **Two modes** — SDK (persistent session, fast) or CLI (process-per-query, simple)
 - **Executor pattern** — swap CLI for SDK/HTTP without touching consumer code
-- **Stateless queries** — each `query()` spawns an independent process
 - **Immutable config** — client options frozen at construction, per-query overrides are non-destructive
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for detailed design documentation.
@@ -427,6 +426,7 @@ npm run stream     # streaming mode (word by word)
 |----------|-------------|
 | [Architecture](./docs/ARCHITECTURE.md) | Design principles, SOLID breakdown, data flow diagrams |
 | [API Reference](./docs/API.md) | Complete reference for all classes, methods, types, and options |
+| [Examples](./docs/EXAMPLES.md) | Comprehensive cookbook covering every feature with code snippets |
 | [Changelog](./CHANGELOG.md) | Version history |
 | [Contributing](./CONTRIBUTING.md) | Development setup and guidelines |
 
@@ -438,7 +438,7 @@ cd claude-connector
 npm install
 
 npm run build              # compile TypeScript
-npm test                   # run 82 unit tests
+npm test                   # run 102 unit tests
 npm run test:integration   # build + run integration test
 npm run typecheck           # type-check without emitting
 ```

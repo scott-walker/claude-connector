@@ -86,6 +86,7 @@ export class Session {
       cwd: resolved.cwd,
       env,
       input: options?.input,
+      systemPrompt: resolved.systemPrompt,
     });
 
     this.updateSessionState(result.sessionId);
@@ -110,6 +111,7 @@ export class Session {
       cwd: resolved.cwd,
       env,
       input: options?.input,
+      systemPrompt: resolved.systemPrompt,
     })) {
       // Capture session ID from result events
       if (event.type === 'result' && event.sessionId) {

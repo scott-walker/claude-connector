@@ -67,4 +67,11 @@ export interface ExecuteOptions {
    * Equivalent to `echo "data" | claude -p "prompt"`.
    */
   readonly input?: string;
+
+  /**
+   * System prompt for this execution.
+   * CLI executor ignores this (it's in the args).
+   * SDK executor uses it to override/prepend system instructions.
+   */
+  readonly systemPrompt?: string;
 }

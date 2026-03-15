@@ -42,6 +42,10 @@ export interface ResolvedOptions {
   readonly continueSession?: boolean;
   readonly forkSession?: boolean;
   readonly schema?: Record<string, unknown>;
+  readonly agent?: string;
+  readonly tools?: readonly string[];
+  readonly name?: string;
+  readonly strictMcpConfig?: boolean;
 }
 
 /**
@@ -83,6 +87,10 @@ export function mergeOptions(
     continueSession: extra.continueSession,
     forkSession: extra.forkSession,
     schema: query?.schema,
+    agent: query?.agent ?? client.agent,
+    tools: query?.tools ?? client.tools,
+    name: client.name,
+    strictMcpConfig: client.strictMcpConfig,
   };
 }
 
@@ -93,6 +101,11 @@ export function mergeOptions(
  */
 export function buildArgs(options: ResolvedOptions): string[] {
   const args: string[] = ['--print', '--output-format', options.outputFormat];
+
+  // BUG-1 fix: stream-json requires --verbose
+  if (options.outputFormat === 'stream-json') {
+    args.push('--verbose');
+  }
 
   // ── Prompt ──────────────────────────────────────────────────────
   args.push(options.prompt);
@@ -115,6 +128,9 @@ export function buildArgs(options: ResolvedOptions): string[] {
   if (options.fallbackModel) {
     args.push('--fallback-model', options.fallbackModel);
   }
+  if (options.effortLevel) {
+    args.push('--effort', options.effortLevel);
+  }
 
   // ── Permissions ─────────────────────────────────────────────────
   if (options.permissionMode) {
@@ -125,6 +141,15 @@ export function buildArgs(options: ResolvedOptions): string[] {
   }
   if (options.disallowedTools?.length) {
     args.push('--disallowedTools', ...options.disallowedTools);
+  }
+
+  // ── Tools (built-in set restriction) ────────────────────────────
+  if (options.tools) {
+    if (options.tools.length === 0) {
+      args.push('--tools', '');
+    } else {
+      args.push('--tools', ...options.tools);
+    }
   }
 
   // ── System prompt ───────────────────────────────────────────────
@@ -157,10 +182,19 @@ export function buildArgs(options: ResolvedOptions): string[] {
       args.push('--mcp-config', cfg);
     }
   }
+  if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+    args.push('--mcp-config', JSON.stringify({ mcpServers: options.mcpServers }));
+  }
+  if (options.strictMcpConfig) {
+    args.push('--strict-mcp-config');
+  }
 
   // ── Agents ──────────────────────────────────────────────────────
   if (options.agents && Object.keys(options.agents).length > 0) {
     args.push('--agents', JSON.stringify(options.agents));
+  }
+  if (options.agent) {
+    args.push('--agent', options.agent);
   }
 
   // ── Structured output ───────────────────────────────────────────
@@ -181,6 +215,14 @@ export function buildArgs(options: ResolvedOptions): string[] {
   if (options.noSessionPersistence) {
     args.push('--no-session-persistence');
   }
+  if (options.name) {
+    args.push('--name', options.name);
+  }
+
+  // ── Hooks (via --settings) ──────────────────────────────────────
+  if (options.hooks && Object.keys(options.hooks).length > 0) {
+    args.push('--settings', JSON.stringify({ hooks: options.hooks }));
+  }
 
   return args;
 }
@@ -199,9 +241,6 @@ export function resolveEnv(
   }
   if (query?.env) {
     Object.assign(env, query.env);
-  }
-  if (client.effortLevel || query?.effortLevel) {
-    env['CLAUDE_CODE_EFFORT_LEVEL'] = (query?.effortLevel ?? client.effortLevel)!;
   }
 
   return env;

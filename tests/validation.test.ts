@@ -15,6 +15,14 @@ describe('validateClientOptions', () => {
     ).not.toThrow();
   });
 
+  it('accepts auto permission mode', () => {
+    expect(() => validateClientOptions({ permissionMode: 'auto' })).not.toThrow();
+  });
+
+  it('accepts max effort level', () => {
+    expect(() => validateClientOptions({ effortLevel: 'max' })).not.toThrow();
+  });
+
   it('accepts empty options', () => {
     expect(() => validateClientOptions({})).not.toThrow();
   });

@@ -101,7 +101,14 @@ export class SdkExecutor extends EventEmitter<SdkExecutorEvents> implements IExe
     await this.ensureReady();
 
     const prompt = extractPrompt(args);
-    await this.session!.send(prompt);
+    const systemPrompt = options.systemPrompt;
+
+    // Prepend system prompt context if provided per-query
+    const effectivePrompt = systemPrompt
+      ? `[System instruction: ${systemPrompt}]\n\n${prompt}`
+      : prompt;
+
+    await this.session!.send(effectivePrompt);
 
     let resultText = '';
     let sessionId = '';
@@ -141,7 +148,13 @@ export class SdkExecutor extends EventEmitter<SdkExecutorEvents> implements IExe
     await this.ensureReady();
 
     const prompt = extractPrompt(args);
-    await this.session!.send(prompt);
+    const systemPrompt = options.systemPrompt;
+
+    const effectivePrompt = systemPrompt
+      ? `[System instruction: ${systemPrompt}]\n\n${prompt}`
+      : prompt;
+
+    await this.session!.send(effectivePrompt);
 
     for await (const msg of this.session!.stream()) {
       const event = this.mapMessage(msg);
@@ -185,6 +198,17 @@ export class SdkExecutor extends EventEmitter<SdkExecutorEvents> implements IExe
 
       if (this.sdkOptions.pathToClaudeCodeExecutable) {
         sessionOptions.pathToClaudeCodeExecutable = this.sdkOptions.pathToClaudeCodeExecutable;
+      }
+
+      // BUG-2 fix: pass systemPrompt to SDK session
+      if (this.sdkOptions.systemPrompt) {
+        (sessionOptions as Record<string, unknown>)['systemPrompt'] = this.sdkOptions.systemPrompt;
+      }
+      if (this.sdkOptions.appendSystemPrompt) {
+        (sessionOptions as Record<string, unknown>)['appendSystemPrompt'] = this.sdkOptions.appendSystemPrompt;
+      }
+      if (this.sdkOptions.maxTurns !== undefined) {
+        (sessionOptions as Record<string, unknown>)['maxTurns'] = this.sdkOptions.maxTurns;
       }
 
       if (this.sdkOptions.env) {
@@ -297,6 +321,15 @@ export interface SdkExecutorOptions {
 
   /** Extra environment variables. */
   readonly env?: Readonly<Record<string, string>>;
+
+  /** System prompt for the session. */
+  readonly systemPrompt?: string;
+
+  /** Append to the default system prompt. */
+  readonly appendSystemPrompt?: string;
+
+  /** Maximum agentic turns. */
+  readonly maxTurns?: number;
 }
 
 /**
@@ -306,7 +339,7 @@ export interface SdkExecutorOptions {
  */
 function extractPrompt(args: readonly string[]): string {
   // The prompt is typically the argument right after '--print', '--output-format', 'json/stream-json'
-  // In buildArgs: ['--print', '--output-format', 'json', <prompt>, ...flags]
+  // In buildArgs: ['--print', '--output-format', 'json', '--verbose'?, <prompt>, ...flags]
   // Find the first arg that doesn't start with '--' and isn't a flag value
   let skipNext = false;
   for (const arg of args) {
@@ -321,6 +354,7 @@ function extractPrompt(args: readonly string[]): string {
         '--system-prompt', '--append-system-prompt', '--max-turns', '--max-budget-usd',
         '--add-dir', '--mcp-config', '--agents', '--json-schema', '--worktree',
         '--resume', '--session-id', '--allowedTools', '--disallowedTools',
+        '--agent', '--tools', '--name', '--settings', '--effort',
       ].includes(arg)) {
         skipNext = true;
       }

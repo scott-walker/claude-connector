@@ -61,6 +61,9 @@ export class Claude {
         allowedTools: options.allowedTools ? [...options.allowedTools] : undefined,
         disallowedTools: options.disallowedTools ? [...options.disallowedTools] : undefined,
         env: options.env,
+        systemPrompt: options.systemPrompt,
+        appendSystemPrompt: options.appendSystemPrompt,
+        maxTurns: options.maxTurns,
       };
       this.sdkExecutor = new SdkExecutor(sdkOpts);
       this.executor = this.sdkExecutor;
@@ -141,6 +144,7 @@ export class Claude {
       cwd: resolved.cwd,
       env,
       input: options?.input,
+      systemPrompt: resolved.systemPrompt,
     });
   }
 
@@ -165,6 +169,7 @@ export class Claude {
       cwd: resolved.cwd,
       env,
       input: options?.input,
+      systemPrompt: resolved.systemPrompt,
     });
   }
 

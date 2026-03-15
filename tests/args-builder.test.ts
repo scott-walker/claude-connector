@@ -209,6 +209,165 @@ describe('buildArgs', () => {
 
     expect(args).toContain('stream-json');
   });
+
+  // ── BUG-1 fix: --verbose for stream-json ──────────────────────
+
+  it('adds --verbose when outputFormat is stream-json', () => {
+    const resolved = mergeOptions({}, undefined, {
+      prompt: 'Stream',
+      outputFormat: 'stream-json',
+    });
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--verbose');
+  });
+
+  it('does not add --verbose when outputFormat is json', () => {
+    const resolved = mergeOptions({}, undefined, {
+      prompt: 'Query',
+      outputFormat: 'json',
+    });
+    const args = buildArgs(resolved);
+
+    expect(args).not.toContain('--verbose');
+  });
+
+  // ── mcpServers inline → --mcp-config JSON ─────────────────────
+
+  it('serializes mcpServers as inline JSON for --mcp-config', () => {
+    const mcpServers = {
+      fs: { type: 'stdio', command: 'mcp-fs', args: ['--root', '/tmp'] },
+    };
+    const resolved = mergeOptions(
+      { mcpServers } as ClientOptions,
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--mcp-config');
+    const mcpIdx = args.lastIndexOf('--mcp-config');
+    expect(JSON.parse(args[mcpIdx + 1]!)).toEqual({ mcpServers });
+  });
+
+  it('passes both mcpConfig paths and mcpServers inline', () => {
+    const resolved = mergeOptions(
+      {
+        mcpConfig: './servers.json',
+        mcpServers: { db: { type: 'stdio', command: 'mcp-db' } },
+      } as ClientOptions,
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args.filter(a => a === '--mcp-config')).toHaveLength(2);
+  });
+
+  // ── hooks → --settings JSON ───────────────────────────────────
+
+  it('serializes hooks as --settings JSON', () => {
+    const hooks = {
+      PreToolUse: [{ matcher: '.*', hooks: [{ command: 'echo pre' }] }],
+    };
+    const resolved = mergeOptions(
+      { hooks } as ClientOptions,
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--settings');
+    const idx = args.indexOf('--settings');
+    expect(JSON.parse(args[idx + 1]!)).toEqual({ hooks });
+  });
+
+  // ── New flags ─────────────────────────────────────────────────
+
+  it('includes --agent flag', () => {
+    const resolved = mergeOptions(
+      { agent: 'reviewer' },
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--agent');
+    expect(args).toContain('reviewer');
+  });
+
+  it('query agent overrides client agent', () => {
+    const resolved = mergeOptions(
+      { agent: 'reviewer' },
+      { agent: 'fixer' },
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('fixer');
+    expect(args).not.toContain('reviewer');
+  });
+
+  it('includes --tools flag', () => {
+    const resolved = mergeOptions(
+      { tools: ['Bash', 'Read', 'Edit'] },
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--tools');
+    expect(args).toContain('Bash');
+    expect(args).toContain('Read');
+    expect(args).toContain('Edit');
+  });
+
+  it('includes --tools with empty string to disable all tools', () => {
+    const resolved = mergeOptions(
+      { tools: [] },
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--tools');
+    expect(args).toContain('');
+  });
+
+  it('includes --name flag', () => {
+    const resolved = mergeOptions(
+      { name: 'my-session' },
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--name');
+    expect(args).toContain('my-session');
+  });
+
+  it('includes --strict-mcp-config flag', () => {
+    const resolved = mergeOptions(
+      { strictMcpConfig: true, mcpConfig: './my.json' },
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--strict-mcp-config');
+  });
+
+  it('includes --effort flag', () => {
+    const resolved = mergeOptions(
+      { effortLevel: 'max' },
+      undefined,
+      { prompt: 'Test', outputFormat: 'json' },
+    );
+    const args = buildArgs(resolved);
+
+    expect(args).toContain('--effort');
+    expect(args).toContain('max');
+  });
 });
 
 describe('mergeOptions', () => {
@@ -257,7 +416,6 @@ describe('resolveEnv', () => {
     expect(env).toEqual({
       FOO: 'bar',
       BAZ: 'qux',
-      // no CLAUDE_CODE_EFFORT_LEVEL since not set
     });
   });
 
@@ -268,11 +426,5 @@ describe('resolveEnv', () => {
     );
 
     expect(env['FOO']).toBe('new');
-  });
-
-  it('sets CLAUDE_CODE_EFFORT_LEVEL from effortLevel', () => {
-    const env = resolveEnv({ effortLevel: 'high' }, undefined);
-
-    expect(env['CLAUDE_CODE_EFFORT_LEVEL']).toBe('high');
   });
 });

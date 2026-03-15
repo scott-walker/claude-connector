@@ -99,6 +99,27 @@ export interface ClientOptions {
 
   /** Disable session persistence (useful for CI/automation). */
   readonly noSessionPersistence?: boolean;
+
+  /**
+   * Select a specific preconfigured agent for the session.
+   * Overrides the default agent. Use with `agents` to define agents inline.
+   */
+  readonly agent?: string;
+
+  /**
+   * Restrict the set of built-in tools available to Claude.
+   * Pass `['default']` for all tools, `[]` to disable all, or specific names.
+   *
+   * **Different from `allowedTools`**: `tools` limits which tools *exist*,
+   * while `allowedTools` controls which tools are *auto-approved*.
+   */
+  readonly tools?: readonly string[];
+
+  /** Display name for the session (shown in /resume and terminal title). */
+  readonly name?: string;
+
+  /** Only use MCP servers from `mcpConfig`, ignoring all other MCP configurations. */
+  readonly strictMcpConfig?: boolean;
 }
 
 /**
@@ -161,6 +182,12 @@ export interface QueryOptions {
 
   /** Extra environment variables for this query. */
   readonly env?: Readonly<Record<string, string>>;
+
+  /** Override agent for this query. */
+  readonly agent?: string;
+
+  /** Override available tools for this query. */
+  readonly tools?: readonly string[];
 }
 
 export type PermissionMode =
@@ -168,9 +195,10 @@ export type PermissionMode =
   | 'acceptEdits'
   | 'plan'
   | 'dontAsk'
-  | 'bypassPermissions';
+  | 'bypassPermissions'
+  | 'auto';
 
-export type EffortLevel = 'low' | 'medium' | 'high';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
 
 export interface McpServerConfig {
   /** Transport type. */

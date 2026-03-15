@@ -761,8 +761,8 @@
     </div>
 
     <div class="stats" style="margin-top:40px">
-      <div class="stat"><div class="stat-value">0</div><div class="stat-label">Dependencies</div></div>
-      <div class="stat"><div class="stat-value">89</div><div class="stat-label">Tests</div></div>
+      <div class="stat"><div class="stat-value">1</div><div class="stat-label">Dependency</div></div>
+      <div class="stat"><div class="stat-value">102</div><div class="stat-label">Tests</div></div>
       <div class="stat"><div class="stat-value">45+</div><div class="stat-label">CLI flags</div></div>
       <div class="stat"><div class="stat-value">32kb</div><div class="stat-label">Size</div></div>
     </div>
@@ -810,7 +810,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="git-branch" style="width:14px;height:14px;vertical-align:middle"></i></span> Git worktree isolation</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="paperclip" style="width:14px;height:14px;vertical-align:middle"></i></span> Piped input (files, images, logs)</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="cpu" style="width:14px;height:14px;vertical-align:middle"></i></span> Model selection (opus/sonnet/haiku)</div>
-      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="gauge" style="width:14px;height:14px;vertical-align:middle"></i></span> Effort level (low/medium/high)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="gauge" style="width:14px;height:14px;vertical-align:middle"></i></span> Effort level (low/medium/high/max)</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="life-buoy" style="width:14px;height:14px;vertical-align:middle"></i></span> Fallback model on failure</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="file-text" style="width:14px;height:14px;vertical-align:middle"></i></span> System prompt override/append</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="ban" style="width:14px;height:14px;vertical-align:middle"></i></span> Max turns &amp; budget limits</div>
@@ -819,7 +819,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="variable" style="width:14px;height:14px;vertical-align:middle"></i></span> Custom env variables</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="repeat" style="width:14px;height:14px;vertical-align:middle"></i></span> Swappable executor backends</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="alert-triangle" style="width:14px;height:14px;vertical-align:middle"></i></span> Typed error hierarchy</div>
-      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="package" style="width:14px;height:14px;vertical-align:middle"></i></span> Zero runtime dependencies</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="package" style="width:14px;height:14px;vertical-align:middle"></i></span> Single runtime dependency (Agent SDK)</div>
     </div>
   </div>
 </section>
@@ -864,7 +864,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)  <spa
   <div class="container">
     <div class="section-label"><i data-lucide="boxes" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> Architecture</div>
     <h2>Built to last</h2>
-    <p class="section-desc">Clean layers, zero dependencies, swappable backends. When the SDK evolves, your code stays the same.</p>
+    <p class="section-desc">Clean layers, minimal dependencies, swappable backends. When the SDK evolves, your code stays the same.</p>
 
     <div class="arch-diagram">            Your Code
                 |
@@ -1240,7 +1240,7 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)</pre>
         </div>
         <div>
           <h3>Available on npm</h3>
-          <p>@scottwalker/claude-connector@0.1.0 &mdash; MIT License &mdash; Zero runtime deps</p>
+          <p>@scottwalker/claude-connector@0.2.0 &mdash; MIT License</p>
         </div>
       </div>
       <a href="https://www.npmjs.com/package/@scottwalker/claude-connector" class="btn btn-npm" style="margin:0">

@@ -13,13 +13,13 @@ export function validateClientOptions(options: ClientOptions): void {
     throw new ValidationError('maxBudget', 'must be a positive number');
   }
   if (options.permissionMode !== undefined) {
-    const valid = ['default', 'acceptEdits', 'plan', 'dontAsk', 'bypassPermissions'];
+    const valid = ['default', 'acceptEdits', 'plan', 'dontAsk', 'bypassPermissions', 'auto'];
     if (!valid.includes(options.permissionMode)) {
       throw new ValidationError('permissionMode', `must be one of: ${valid.join(', ')}`);
     }
   }
   if (options.effortLevel !== undefined) {
-    const valid = ['low', 'medium', 'high'];
+    const valid = ['low', 'medium', 'high', 'max'];
     if (!valid.includes(options.effortLevel)) {
       throw new ValidationError('effortLevel', `must be one of: ${valid.join(', ')}`);
     }
