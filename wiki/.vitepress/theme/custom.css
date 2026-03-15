@@ -1,51 +1,127 @@
 /**
- * Orange brand palette matching the favicon (#f97316).
- * Overrides VitePress default blue/purple theme.
+ * Brand Book theme — #272840 backgrounds, #E8611A orange accent.
+ * Fonts: Bangers (headings), Comic Neue (body), JetBrains Mono (code).
  */
 
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&display=swap');
+
+/* ── Light mode (matches brand book) ── */
 :root {
-  --vp-c-brand-1: #f97316;
-  --vp-c-brand-2: #ea580c;
-  --vp-c-brand-3: #c2410c;
-  --vp-c-brand-soft: rgba(249, 115, 22, 0.14);
+  --vp-c-brand-1: #E8611A;
+  --vp-c-brand-2: #C94E10;
+  --vp-c-brand-3: #B85A1A;
+  --vp-c-brand-soft: rgba(232, 97, 26, 0.12);
 
   --vp-button-brand-border: transparent;
   --vp-button-brand-text: #fff;
-  --vp-button-brand-bg: #f97316;
+  --vp-button-brand-bg: #E8611A;
   --vp-button-brand-hover-border: transparent;
   --vp-button-brand-hover-text: #fff;
-  --vp-button-brand-hover-bg: #ea580c;
+  --vp-button-brand-hover-bg: #C94E10;
   --vp-button-brand-active-border: transparent;
   --vp-button-brand-active-text: #fff;
-  --vp-button-brand-active-bg: #c2410c;
+  --vp-button-brand-active-bg: #B85A1A;
 
   --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(135deg, #f97316, #fbbf24);
-  --vp-home-hero-image-background-image: linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(251, 191, 36, 0.2));
+  --vp-home-hero-name-background: linear-gradient(135deg, #E8611A, #F07D3C, #E8611A);
+  --vp-home-hero-image-background-image: linear-gradient(135deg, rgba(232, 97, 26, 0.2), rgba(240, 125, 60, 0.2));
   --vp-home-hero-image-filter: blur(44px);
+
+  --vp-font-family-base: 'Comic Neue', cursive, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', monospace;
 }
 
+/* ── Dark mode ── */
 .dark {
-  --vp-c-brand-1: #fb923c;
-  --vp-c-brand-2: #f97316;
-  --vp-c-brand-3: #ea580c;
-  --vp-c-brand-soft: rgba(249, 115, 22, 0.16);
+  --vp-c-brand-1: #F07D3C;
+  --vp-c-brand-2: #E8611A;
+  --vp-c-brand-3: #C94E10;
+  --vp-c-brand-soft: rgba(232, 97, 26, 0.16);
+
+  --vp-c-bg: #272840;
+  --vp-c-bg-alt: #1C1D32;
+  --vp-c-bg-elv: #31334F;
+  --vp-c-bg-soft: #2F3050;
+
+  --vp-c-border: #31334F;
+  --vp-c-divider: #31334F;
+  --vp-c-gutter: #1C1D32;
+
+  --vp-c-text-1: #EEEEF3;
+  --vp-c-text-2: #AAACBF;
+  --vp-c-text-3: #5F6180;
+
+  --vp-code-block-bg: #141525;
+  --vp-code-tab-bg: #1C1D32;
+
+  --vp-c-default-1: #31334F;
+  --vp-c-default-2: #4A4C68;
+  --vp-c-default-3: #5F6180;
+  --vp-c-default-soft: rgba(49, 51, 79, 0.4);
+
+  --vp-sidebar-bg-color: #1C1D32;
+  --vp-nav-bg-color: #272840;
 }
 
-/* Feature card icons — monochrome orange */
+/* ── Headings in Bangers ── */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  font-family: 'Bangers', cursive;
+  letter-spacing: 1.5px;
+}
+
+.VPHero .name {
+  font-family: 'Bangers', cursive !important;
+  letter-spacing: 2px;
+}
+
+.VPHero .text {
+  font-family: 'Bangers', cursive !important;
+  letter-spacing: 1px;
+}
+
+/* ── No border-radius ── */
+.vp-doc div[class*="language-"],
+.vp-doc [class*="language-"] code,
+.VPFeature,
+.VPButton,
+.VPNavBarMenuLink,
+.VPSidebarItem,
+.vp-doc .custom-block,
+.VPHero .actions .VPButton {
+  border-radius: 0 !important;
+}
+
+/* ── Feature card icons ── */
 .VPFeature .VPImage,
 .vp-doc .header-anchor:hover {
   color: var(--vp-c-brand-1);
 }
 
-/* Feature icon containers — subtle orange bg */
 .VPFeature .icon {
   background: var(--vp-c-brand-soft);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 8px;
   width: 48px;
   height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ── Code blocks — brand colors ── */
+.dark .vp-doc div[class*="language-"] {
+  background-color: #141525;
+  border: 1px solid #31334F;
+}
+
+/* ── Sidebar active link ── */
+.dark .VPSidebarItem.is-active > .item > .link > .text {
+  color: var(--vp-c-brand-1);
+}
+
+/* ── Custom block tips ── */
+.dark .vp-doc .custom-block.tip {
+  border-color: var(--vp-c-brand-1);
 }

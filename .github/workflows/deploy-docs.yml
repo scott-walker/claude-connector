@@ -39,7 +39,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p site/wiki
-          cp docs/landing.html site/index.html
+          cp docs/index.html site/index.html
           cp -r docs/assets site/assets
           cp -r wiki/.vitepress/dist/* site/wiki/
 

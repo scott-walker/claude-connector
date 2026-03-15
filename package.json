@@ -26,6 +26,7 @@
     "typecheck": "tsc --noEmit",
     "test:integration": "npm run build && cd examples/integration-test && npm install && npx tsx src/index.ts",
     "prepublishOnly": "npm run build",
+    "landing:dev": "npx vite docs --port 3000",
     "wiki:dev": "vitepress dev wiki",
     "wiki:build": "vitepress build wiki",
     "wiki:preview": "vitepress preview wiki"
