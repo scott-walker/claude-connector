@@ -612,6 +612,7 @@ Discriminated union yielded by `stream()`. Check `event.type` to narrow.
 | `'task_started'` | `EVENT_TASK_STARTED` | `taskId`, `description`, `taskType?`, `prompt?` | Subagent started |
 | `'task_progress'` | `EVENT_TASK_PROGRESS` | `taskId`, `description`, `usage`, `lastToolName?`, `summary?` | Subagent progress update |
 | `'task_notification'` | `EVENT_TASK_NOTIFICATION` | `taskId`, `status`, `outputFile`, `summary`, `usage?` | Subagent completed/failed/stopped |
+| `'rate_limit'` | `EVENT_RATE_LIMIT` | `status`, `resetsAt?`, `rateLimitType?`, `utilization?`, `data` | Rate limit warning or rejection (SDK mode) |
 
 ### Task event details
 

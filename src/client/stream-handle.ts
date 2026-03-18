@@ -5,6 +5,7 @@ import {
   EVENT_RESULT,
   EVENT_ERROR,
   EVENT_SYSTEM,
+  EVENT_RATE_LIMIT,
   EVENT_TASK_STARTED,
   EVENT_TASK_PROGRESS,
   EVENT_TASK_NOTIFICATION,
@@ -15,6 +16,7 @@ import type {
   StreamResultEvent,
   StreamErrorEvent,
   StreamSystemEvent,
+  StreamRateLimitEvent,
   StreamTaskStartedEvent,
   StreamTaskProgressEvent,
   StreamTaskNotificationEvent,
@@ -28,6 +30,7 @@ type SystemCallback = (event: StreamSystemEvent) => void;
 type TaskStartedCallback = (event: StreamTaskStartedEvent) => void;
 type TaskProgressCallback = (event: StreamTaskProgressEvent) => void;
 type TaskNotificationCallback = (event: StreamTaskNotificationEvent) => void;
+type RateLimitCallback = (event: StreamRateLimitEvent) => void;
 
 /**
  * A streaming response handle with fluent callback API and Node.js stream support.
@@ -72,6 +75,7 @@ export class StreamHandle implements AsyncIterable<StreamEvent> {
   private readonly taskStartedCallbacks: TaskStartedCallback[] = [];
   private readonly taskProgressCallbacks: TaskProgressCallback[] = [];
   private readonly taskNotificationCallbacks: TaskNotificationCallback[] = [];
+  private readonly rateLimitCallbacks: RateLimitCallback[] = [];
 
   constructor(source: () => AsyncIterable<StreamEvent>) {
     this.source = source;
@@ -90,6 +94,7 @@ export class StreamHandle implements AsyncIterable<StreamEvent> {
   on(type: typeof EVENT_TASK_STARTED, callback: TaskStartedCallback): this;
   on(type: typeof EVENT_TASK_PROGRESS, callback: TaskProgressCallback): this;
   on(type: typeof EVENT_TASK_NOTIFICATION, callback: TaskNotificationCallback): this;
+  on(type: typeof EVENT_RATE_LIMIT, callback: RateLimitCallback): this;
   on(type: string, callback: (...args: never[]) => void): this {
     switch (type) {
       case EVENT_TEXT: this.textCallbacks.push(callback as TextCallback); break;
@@ -100,6 +105,7 @@ export class StreamHandle implements AsyncIterable<StreamEvent> {
       case EVENT_TASK_STARTED: this.taskStartedCallbacks.push(callback as TaskStartedCallback); break;
       case EVENT_TASK_PROGRESS: this.taskProgressCallbacks.push(callback as TaskProgressCallback); break;
       case EVENT_TASK_NOTIFICATION: this.taskNotificationCallbacks.push(callback as TaskNotificationCallback); break;
+      case EVENT_RATE_LIMIT: this.rateLimitCallbacks.push(callback as RateLimitCallback); break;
     }
     return this;
   }
@@ -199,6 +205,9 @@ export class StreamHandle implements AsyncIterable<StreamEvent> {
         break;
       case EVENT_TASK_NOTIFICATION:
         safeCall(this.taskNotificationCallbacks, event);
+        break;
+      case EVENT_RATE_LIMIT:
+        safeCall(this.rateLimitCallbacks, event);
         break;
     }
   }

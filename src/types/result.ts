@@ -41,6 +41,7 @@ export type StreamEvent =
   | StreamResultEvent
   | StreamErrorEvent
   | StreamSystemEvent
+  | StreamRateLimitEvent
   | StreamTaskStartedEvent
   | StreamTaskProgressEvent
   | StreamTaskNotificationEvent;
@@ -116,6 +117,27 @@ export interface StreamSystemEvent {
   readonly subtype: string;
 
   /** Event-specific data. */
+  readonly data: Record<string, unknown>;
+}
+
+// ── Rate limit event ──────────────────────────────────────────────
+
+export interface StreamRateLimitEvent {
+  readonly type: 'rate_limit';
+
+  /** Rate limit status. */
+  readonly status: 'allowed' | 'allowed_warning' | 'rejected';
+
+  /** When the rate limit resets (Unix timestamp in ms). */
+  readonly resetsAt?: number;
+
+  /** Type of rate limit hit. */
+  readonly rateLimitType?: string;
+
+  /** Current utilization (0-1). */
+  readonly utilization?: number;
+
+  /** Full rate limit info from SDK. */
   readonly data: Record<string, unknown>;
 }
 

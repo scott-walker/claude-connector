@@ -83,6 +83,8 @@ export const CHAT_USER_MESSAGE = 'user_message' as const;
 export const EVENT_TASK_STARTED = 'task_started' as const;
 export const EVENT_TASK_PROGRESS = 'task_progress' as const;
 export const EVENT_TASK_NOTIFICATION = 'task_notification' as const;
+export const EVENT_RATE_LIMIT = 'rate_limit' as const;
+export const SDK_RATE_LIMIT_EVENT = 'rate_limit_event' as const;
 
 // ── System Event Subtypes ───────────────────────────────────────────
 

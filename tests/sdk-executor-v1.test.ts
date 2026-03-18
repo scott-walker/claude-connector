@@ -831,6 +831,85 @@ describe('SdkExecutor — structured output and error handling', () => {
     executor.close();
   });
 
+  it('maps rate_limit_event to rate_limit stream event', async () => {
+    customResponses = [
+      {
+        type: 'rate_limit_event',
+        rate_limit_info: {
+          status: 'allowed_warning',
+          resetsAt: 1700000000000,
+          rateLimitType: 'five_hour',
+          utilization: 0.85,
+        },
+        uuid: 'rl-1',
+        session_id: 'mock-session',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        result: 'Done',
+        session_id: 'mock-session',
+        usage: { input_tokens: 10, output_tokens: 20 },
+        total_cost_usd: 0.01,
+        duration_ms: 50,
+      },
+    ];
+
+    const executor = new SdkExecutor({ model: 'sonnet' });
+    await executor.init();
+
+    const events: StreamEvent[] = [];
+    for await (const event of executor.stream(
+      ['--print', '--output-format', 'stream-json', '--verbose', 'Hello'],
+      { cwd: '/tmp', env: {} },
+    )) {
+      events.push(event);
+    }
+
+    const rlEvent = events.find((e) => e.type === 'rate_limit') as any;
+    expect(rlEvent).toBeDefined();
+    expect(rlEvent.status).toBe('allowed_warning');
+    expect(rlEvent.utilization).toBe(0.85);
+    expect(rlEvent.resetsAt).toBe(1700000000000);
+    executor.close();
+  });
+
+  it('forwards unknown SDK message types as system events', async () => {
+    customResponses = [
+      {
+        type: 'tool_progress',
+        tool_use_id: 'tu-1',
+        tool_name: 'Bash',
+        elapsed_time_seconds: 5,
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        result: 'Done',
+        session_id: 'mock-session',
+        usage: { input_tokens: 10, output_tokens: 20 },
+        total_cost_usd: 0.01,
+        duration_ms: 50,
+      },
+    ];
+
+    const executor = new SdkExecutor({ model: 'sonnet' });
+    await executor.init();
+
+    const events: StreamEvent[] = [];
+    for await (const event of executor.stream(
+      ['--print', '--output-format', 'stream-json', '--verbose', 'Hello'],
+      { cwd: '/tmp', env: {} },
+    )) {
+      events.push(event);
+    }
+
+    const sysEvent = events.find((e) => e.type === 'system' && (e as any).subtype === 'tool_progress') as any;
+    expect(sysEvent).toBeDefined();
+    expect(sysEvent.data.tool_name).toBe('Bash');
+    executor.close();
+  });
+
   it('init can be retried after failure', async () => {
     let callCount = 0;
 

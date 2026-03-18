@@ -81,6 +81,9 @@ export {
   EVENT_TASK_PROGRESS,
   EVENT_TASK_NOTIFICATION,
 
+  // Rate limit
+  EVENT_RATE_LIMIT,
+
   // Permission modes
   PERMISSION_DEFAULT,
   PERMISSION_ACCEPT_EDITS,
@@ -166,6 +169,7 @@ export type {
   StreamTaskStartedEvent,
   StreamTaskProgressEvent,
   StreamTaskNotificationEvent,
+  StreamRateLimitEvent,
   // Info types
   AccountInfo,
   ModelInfo,

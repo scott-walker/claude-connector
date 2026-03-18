@@ -47,6 +47,7 @@ export type {
   StreamTaskStartedEvent,
   StreamTaskProgressEvent,
   StreamTaskNotificationEvent,
+  StreamRateLimitEvent,
   // Info types
   AccountInfo,
   ModelInfo,

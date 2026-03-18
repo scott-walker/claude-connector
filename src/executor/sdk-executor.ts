@@ -28,6 +28,8 @@ import {
   EVENT_TASK_STARTED,
   EVENT_TASK_PROGRESS,
   EVENT_TASK_NOTIFICATION,
+  EVENT_RATE_LIMIT,
+  SDK_RATE_LIMIT_EVENT,
   ROLE_ASSISTANT,
   KEY_MESSAGE,
   KEY_CONTENT,
@@ -662,8 +664,27 @@ export class SdkExecutor extends EventEmitter<SdkExecutorEvents> implements IExe
         };
       }
 
+      case SDK_RATE_LIMIT_EVENT: {
+        const rlMsg = msg as Record<string, unknown>;
+        const info = (rlMsg['rate_limit_info'] ?? {}) as Record<string, unknown>;
+        return {
+          type: EVENT_RATE_LIMIT,
+          status: (info['status'] as 'allowed' | 'allowed_warning' | 'rejected') ?? 'allowed',
+          resetsAt: typeof info['resetsAt'] === 'number' ? info['resetsAt'] : undefined,
+          rateLimitType: typeof info['rateLimitType'] === 'string' ? info['rateLimitType'] : undefined,
+          utilization: typeof info['utilization'] === 'number' ? info['utilization'] : undefined,
+          data: info,
+        };
+      }
+
       default:
-        return null;
+        // Forward unknown SDK message types as generic system events
+        // so users can handle future SDK additions without connector updates
+        return {
+          type: EVENT_SYSTEM,
+          subtype: String((msg as Record<string, unknown>)['type'] ?? 'unknown'),
+          data: msg as Record<string, unknown>,
+        };
     }
   }
 }
