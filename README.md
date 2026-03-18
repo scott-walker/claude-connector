@@ -205,11 +205,8 @@ Connect Model Context Protocol servers:
 ```typescript
 import { Claude } from '@scottwalker/claude-connector'
 
+// SDK mode (default) — inline definitions
 const claude = new Claude({
-  // From config file
-  mcpConfig: './mcp.json',
-
-  // Or inline definitions
   mcpServers: {
     playwright: {
       command: 'npx',
@@ -220,6 +217,12 @@ const claude = new Claude({
       url: 'http://localhost:3001/mcp',
     },
   },
+})
+
+// CLI mode — config file path
+const cliClaude = new Claude({
+  useSdk: false,
+  mcpConfig: './mcp.json',
 })
 ```
 
@@ -307,10 +310,10 @@ Control tool approval with a callback instead of static permission modes:
 import { Claude } from '@scottwalker/claude-connector'
 
 const claude = new Claude({
-  canUseTool: (tool, args) => {
-    if (tool === 'Bash' && args.command?.includes('rm ')) return false
-    if (tool === 'Edit') return true
-    return 'ask' // fall back to default behavior
+  canUseTool: async (toolName, input, { signal }) => {
+    if (toolName === 'Bash' && String(input.command).includes('rm -rf'))
+      return { behavior: 'deny', message: 'Dangerous command blocked' }
+    return { behavior: 'allow' }
   },
 })
 ```
@@ -321,13 +324,17 @@ Define custom tools that run in-process — no external MCP server required:
 
 ```typescript
 import { Claude, createSdkMcpServer, sdkTool } from '@scottwalker/claude-connector'
+import { z } from 'zod/v4'
 
-const server = createSdkMcpServer({
-  tools: {
-    getUser: sdkTool({ id: { type: 'string' } }, async ({ id }) => {
-      return { name: 'Alice', role: 'admin' }
-    }),
-  },
+const server = await createSdkMcpServer({
+  name: 'my-tools',
+  tools: [
+    await sdkTool('getUser', 'Get user by ID', { id: z.string() },
+      async ({ id }) => ({
+        content: [{ type: 'text', text: JSON.stringify({ name: 'Alice', role: 'admin' }) }],
+      })
+    ),
+  ],
 })
 const claude = new Claude({ mcpServers: { myTools: server } })
 ```
@@ -341,11 +348,20 @@ import { Claude } from '@scottwalker/claude-connector'
 
 const claude = new Claude({
   hookCallbacks: {
-    PreToolUse: ({ toolName, args }) => {
-      if (toolName === 'Bash' && args.command?.includes('sudo')) return 'deny'
-    },
-    PostToolUse: ({ toolName, result }) => console.log(`${toolName} done`),
-    Notification: ({ message }) => sendSlack(message),
+    PreToolUse: [{
+      matcher: 'Bash',
+      hooks: [async (input) => {
+        if (String(input.tool_input?.command).includes('sudo'))
+          return { decision: 'block', reason: 'sudo not allowed' }
+        return { continue: true }
+      }],
+    }],
+    Notification: [{
+      hooks: [async (input) => {
+        console.log('Notification:', input.message)
+        return {}
+      }],
+    }],
   },
 })
 ```
@@ -439,9 +455,13 @@ Provide CLAUDE.md instructions, settings overrides, and plugins programmatically
 
 ```typescript
 const claude = new Claude({
-  settingSources: ['./project/CLAUDE.md', './team/CLAUDE.md'],
-  settings: { preferredLanguage: 'TypeScript', maxFileSize: 10_000 },
-  plugins: ['@claude/eslint-plugin', '@claude/prettier-plugin'],
+  settingSources: ['user', 'project'],
+  settings: {
+    permissions: { allow: ['Bash(npm test)', 'Read(*)'] },
+  },
+  plugins: [
+    { type: 'local', path: './my-plugin' },
+  ],
 })
 ```
 
@@ -453,9 +473,13 @@ Override how Claude Code processes are created — useful for VMs, containers, o
 import { Claude } from '@scottwalker/claude-connector'
 
 const claude = new Claude({
-  spawnClaudeCodeProcess: (args, env) => {
+  spawnClaudeCodeProcess: (options) => {
+    // options: { command, args, cwd, env, signal }
     // Run inside a Docker container instead of locally
-    return spawn('docker', ['exec', 'my-sandbox', 'claude', ...args], { env })
+    return spawn('docker', ['exec', 'my-sandbox', options.command, ...options.args], {
+      env: options.env,
+      cwd: options.cwd,
+    })
   },
 })
 ```
@@ -465,9 +489,10 @@ const claude = new Claude({
 List and inspect past sessions:
 
 ```typescript
-const claude = new Claude()
-const sessions = await claude.listSessions()          // all session IDs + metadata
-const messages = await claude.getSessionMessages(id)  // full message history
+import { listSessions, getSessionMessages } from '@scottwalker/claude-connector'
+
+const sessions = await listSessions({ limit: 10 })                  // all session IDs + metadata
+const messages = await getSessionMessages(sessions[0].sessionId)    // full message history
 ```
 
 ### Full Configuration
@@ -506,8 +531,7 @@ const claude = new Claude({
   // Directories
   additionalDirs: ['../shared-lib', '../proto'],
 
-  // MCP
-  mcpConfig: './mcp.json',
+  // MCP (inline definitions for SDK mode)
   mcpServers: { /* ... */ },
 
   // Agents
@@ -666,7 +690,7 @@ cd claude-connector
 npm install
 
 npm run build              # compile TypeScript
-npm test                   # run 122 unit tests
+npm test                   # run unit tests
 npm run test:integration   # build + run integration test
 npm run typecheck           # type-check without emitting
 ```

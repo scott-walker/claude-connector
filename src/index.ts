@@ -198,7 +198,7 @@ export type {
  *
  * @example
  * ```ts
- * import { createSdkMcpServer, tool } from '@scottwalker/claude-connector'
+ * import { createSdkMcpServer, sdkTool } from '@scottwalker/claude-connector'
  * import { z } from 'zod/v4'
  *
  * const server = createSdkMcpServer({

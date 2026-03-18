@@ -475,27 +475,31 @@ new Claude({
 
 Per-query overrides. Any field set here takes precedence over `ClientOptions`.
 
-| Option                | Type                    | Description                                    |
-|-----------------------|-------------------------|------------------------------------------------|
-| `cwd`                 | `string`                | Override working directory                     |
-| `model`               | `string`                | Override model                                 |
-| `effortLevel`         | `EffortLevel`           | Override effort level                          |
-| `permissionMode`      | `PermissionMode`        | Override permission mode                       |
-| `allowedTools`        | `string[]`              | Override allowed tools                         |
-| `disallowedTools`     | `string[]`              | Override disallowed tools                      |
-| `tools`               | `string[]`              | Override available built-in tools              |
-| `systemPrompt`        | `string`                | Override system prompt                         |
-| `appendSystemPrompt`  | `string`                | Override appended system prompt                |
-| `maxTurns`            | `number`                | Override max turns                             |
-| `maxBudget`           | `number`                | Override max budget                            |
-| `input`               | `string`                | Piped stdin data (like `echo data \| claude`)  |
-| `schema`              | `object`                | JSON Schema for structured output              |
-| `worktree`            | `boolean \| string`     | Run in isolated git worktree                   |
-| `additionalDirs`      | `string[]`              | Override additional directories                |
-| `env`                 | `Record<string, string>` | Override environment variables                |
-| `agent`               | `string`                | Override agent for this query                  |
-| `signal`              | `AbortSignal`           | Per-query cancellation (works in both SDK and CLI modes) |
-| `thinking`            | `ThinkingConfig`        | Per-query thinking override (SDK mode only)    |
+| Option                | Type                    | Description                                    | Mode    |
+|-----------------------|-------------------------|------------------------------------------------|---------|
+| `cwd`                 | `string`                | Override working directory                     | Both    |
+| `model`               | `string`                | Override model                                 | CLI only |
+| `effortLevel`         | `EffortLevel`           | Override effort level                          | CLI only |
+| `permissionMode`      | `PermissionMode`        | Override permission mode                       | CLI only |
+| `allowedTools`        | `string[]`              | Override allowed tools                         | CLI only |
+| `disallowedTools`     | `string[]`              | Override disallowed tools                      | CLI only |
+| `tools`               | `string[]`              | Override available built-in tools              | CLI only |
+| `systemPrompt`        | `string`                | Override system prompt                         | Both *  |
+| `appendSystemPrompt`  | `string`                | Override appended system prompt                | CLI only |
+| `maxTurns`            | `number`                | Override max turns                             | CLI only |
+| `maxBudget`           | `number`                | Override max budget                            | CLI only |
+| `input`               | `string`                | Piped stdin data (like `echo data \| claude`)  | CLI only |
+| `schema`              | `object`                | JSON Schema for structured output              | CLI only |
+| `worktree`            | `boolean \| string`     | Run in isolated git worktree                   | CLI only |
+| `additionalDirs`      | `string[]`              | Override additional directories                | CLI only |
+| `env`                 | `Record<string, string>` | Override environment variables                | Both    |
+| `agent`               | `string`                | Override agent for this query                  | CLI only |
+| `signal`              | `AbortSignal`           | Per-query cancellation                         | CLI only |
+| `thinking`            | `ThinkingConfig`        | Per-query thinking override                    | Not implemented |
+
+> **SDK mode note:** In SDK mode, most per-query overrides are ignored because the SDK session is configured once at initialization. Options marked "CLI only" are passed as CLI flags in CLI mode but have no effect in SDK mode. Use `ClientOptions` to set these at session level.
+>
+> \* `systemPrompt` in SDK mode is prepended as text to the prompt (`[System instruction: ...]`), not as a true system prompt parameter.
 
 ### Per-query cancellation with AbortSignal
 

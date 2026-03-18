@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { StreamHandle } from '../src/client/stream-handle.js';
 import type {
   StreamEvent,
+  StreamRateLimitEvent,
   StreamTaskStartedEvent,
   StreamTaskProgressEvent,
   StreamTaskNotificationEvent,
@@ -176,6 +177,40 @@ describe('StreamHandle — task events', () => {
       .on('task_started', () => {})
       .on('task_progress', () => {})
       .on('task_notification', () => {});
+
+    expect(result).toBe(handle);
+  });
+
+  it('dispatches rate_limit events via on() callback', async () => {
+    const rateLimits: StreamRateLimitEvent[] = [];
+    const events: StreamEvent[] = [
+      {
+        type: 'rate_limit',
+        status: 'allowed_warning',
+        resetsAt: 1700000000000,
+        rateLimitType: 'five_hour',
+        utilization: 0.85,
+        data: { status: 'allowed_warning', utilization: 0.85 },
+      } as StreamRateLimitEvent,
+      { type: 'text', text: 'Response' },
+      resultEvent,
+    ];
+
+    await new StreamHandle(createSource(events))
+      .on('rate_limit', (e) => rateLimits.push(e))
+      .done();
+
+    expect(rateLimits).toHaveLength(1);
+    expect(rateLimits[0]!.status).toBe('allowed_warning');
+    expect(rateLimits[0]!.utilization).toBe(0.85);
+  });
+
+  it('on() chaining works with rate_limit', () => {
+    const handle = new StreamHandle(createSource([]));
+
+    const result = handle
+      .on('rate_limit', () => {})
+      .on('text', () => {});
 
     expect(result).toBe(handle);
   });
