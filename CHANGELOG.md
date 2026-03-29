@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-03-29
+
+### Fixed
+
+- **Quick Start output** — CLI setup now shows per-instance `env` config inside `new Claude({...})` instead of global `export` variables, enabling multiple isolated instances on one machine
+- **Documentation** — added CLI Setup section to README, wiki getting-started guide, and landing page with usage examples and per-instance isolation patterns
+- **Release command** — `/release` now includes mandatory documentation update step
+
 ## [0.5.3] - 2026-03-29
 
 ### Added

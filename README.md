@@ -27,12 +27,46 @@ Claude Code is a powerful AI coding agent, but it only runs in a terminal. **cla
 ## Requirements
 
 - **Node.js** >= 18.0.0
-- **Claude Code CLI** installed and authenticated (`claude auth login`)
+- **Claude Code CLI** installed and authenticated
 
 ## Install
 
 ```bash
 npm install @scottwalker/claude-connector
+```
+
+## CLI Setup
+
+Bootstrap Claude Code on a fresh server with a single command:
+
+```bash
+npx @scottwalker/claude-connector setup
+```
+
+The setup wizard will:
+1. Check Node.js version
+2. Install Claude Code globally (if not installed)
+3. Ask for a config directory (default: `~/.claude`) — use different paths for isolated instances
+4. Ask for an HTTP proxy (optional) — for servers behind a proxy
+5. Run `claude login` for authentication
+6. Print a ready-to-use code example with your settings
+
+Use `--proxy` to skip the interactive proxy prompt:
+
+```bash
+npx @scottwalker/claude-connector setup --proxy "http://user:pass@host:port"
+```
+
+Each instance can have its own config directory and proxy — no global environment variables needed:
+
+```typescript
+const claude = new Claude({
+  model: 'sonnet',
+  env: {
+    CLAUDE_CONFIG_DIR: '/opt/my-project/.claude',
+    HTTPS_PROXY: 'http://user:pass@host:port',
+  },
+})
 ```
 
 ## Quick Start

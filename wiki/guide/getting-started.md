@@ -11,6 +11,34 @@
 npm install @scottwalker/claude-connector
 ```
 
+## CLI Setup (optional)
+
+Bootstrap Claude Code on a fresh server with one command:
+
+```bash
+npx @scottwalker/claude-connector setup
+```
+
+This will check Node.js, install Claude Code, configure a config directory and proxy, authenticate, and print a ready-to-use code example.
+
+Use `--proxy` for servers behind a proxy:
+
+```bash
+npx @scottwalker/claude-connector setup --proxy "http://user:pass@host:port"
+```
+
+Per-instance isolation (no global env vars needed):
+
+```ts
+const claude = new Claude({
+  model: 'sonnet',
+  env: {
+    CLAUDE_CONFIG_DIR: '/opt/project-a/.claude',
+    HTTPS_PROXY: 'http://user:pass@host:port',
+  },
+})
+```
+
 All examples use ESM imports:
 
 ```ts

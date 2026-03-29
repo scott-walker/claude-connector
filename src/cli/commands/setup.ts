@@ -161,50 +161,39 @@ function printResult(ok: boolean, label: string): void {
   console.log(`  ${icon} ${label}`);
 }
 
-function printQuickStart(configDir: string, hasCustomDir: boolean): void {
+function printQuickStart(configDir: string, hasCustomDir: boolean, proxy?: string): void {
   const dim = chalk.dim;
   const accent = chalk.cyan;
   const key = chalk.yellow;
   const str = chalk.green;
-  const comment = chalk.dim.italic;
+
+  const hasEnv = hasCustomDir || proxy;
 
   console.log(chalk.bold('  Quick Start'));
   console.log(dim('  ─────────────────────────\n'));
 
-  if (hasCustomDir) {
-    console.log(dim('  // Set env before use (add to .bashrc for persistence)'));
-    console.log(`  ${accent('export')} ${key('CLAUDE_CONFIG_DIR')}=${str(`"${configDir}"`)}\n`);
-  }
-
-  console.log(dim('  // 1. Basic query'));
   console.log(`  ${accent('import')} { ${key('Claude')} } ${accent('from')} ${str("'@scottwalker/claude-connector'")}`);
   console.log();
   console.log(`  ${accent('const')} ${key('claude')} = ${accent('new')} ${key('Claude')}({`);
   console.log(`    ${key('model')}:          ${str("'sonnet'")},`);
   console.log(`    ${key('permissionMode')}: ${str("'auto'")},`);
+
+  if (hasEnv) {
+    console.log(`    ${key('env')}: {`);
+    if (hasCustomDir) {
+      console.log(`      ${key('CLAUDE_CONFIG_DIR')}: ${str(`'${configDir}'`)},`);
+    }
+    if (proxy) {
+      console.log(`      ${key('HTTPS_PROXY')}:       ${str(`'${proxy}'`)},`);
+      console.log(`      ${key('HTTP_PROXY')}:        ${str(`'${proxy}'`)},`);
+    }
+    console.log(`    },`);
+  }
+
   console.log(`  })`);
   console.log();
-  console.log(`  ${accent('const')} ${key('result')} = ${accent('await')} ${key('claude')}.${accent('query')}(${str("'Analyze this project'")})`);
+  console.log(`  ${accent('const')} ${key('result')} = ${accent('await')} ${key('claude')}.${accent('query')}(${str("'Hello!'")})`);
   console.log(`  console.log(${key('result')}.${accent('text')})`);
-
-  console.log();
-  console.log(dim('  // 2. Streaming'));
-  console.log(`  ${accent('const')} ${key('stream')} = ${key('claude')}.${accent('stream')}(${str("'Explain auth.ts'")})`);
-  console.log(`  ${accent('const')} ${key('text')} = ${accent('await')} ${key('stream')}.${accent('text')}() ${comment('// collect all text')}`);
-
-  console.log();
-  console.log(dim('  // 3. Multi-turn session'));
-  console.log(`  ${accent('const')} ${key('session')} = ${key('claude')}.${accent('session')}()`);
-  console.log(`  ${accent('await')} ${key('session')}.${accent('query')}(${str("'Read src/index.ts'")})`);
-  console.log(`  ${accent('await')} ${key('session')}.${accent('query')}(${str("'Now refactor it'")})`);
-
-  console.log();
-  console.log(dim('  // 4. Parallel queries'));
-  console.log(`  ${accent('const')} ${key('results')} = ${accent('await')} ${key('claude')}.${accent('parallel')}([`);
-  console.log(`    ${str("'Check for security issues'")},`);
-  console.log(`    ${str("'Find unused exports'")},`);
-  console.log(`    ${str("'Suggest performance improvements'")},`);
-  console.log(`  ])`);
 
   console.log();
   console.log(dim('  ─────────────────────────'));
@@ -262,7 +251,7 @@ export async function setup(options?: { proxy?: string }): Promise<void> {
     printResult(true, 'Authenticated');
     console.log();
     console.log(chalk.green.bold('  All set! You can now use Claude Connector.\n'));
-    printQuickStart(configDir, hasCustomDir);
+    printQuickStart(configDir, hasCustomDir, proxy);
     return;
   }
 
@@ -286,5 +275,5 @@ export async function setup(options?: { proxy?: string }): Promise<void> {
 
   console.log();
   console.log(chalk.green.bold('  All set! You can now use Claude Connector.\n'));
-  printQuickStart(configDir, hasCustomDir);
+  printQuickStart(configDir, hasCustomDir, proxy);
 }

@@ -46,11 +46,17 @@ Add a new entry at the **top** of the existing entries (below the header) in bot
 
 Use the change description from `$ARGUMENTS` (or git log from step 1). Group changes under `### Added`, `### Changed`, `### Fixed` as appropriate.
 
-### 4. Update landing page stats (if relevant)
+### 4. Update documentation
 
-If features were added or tests changed, update these values in `landing/index.html`:
-- Test count (search for the number near "unit tests" or "tests")
-- Any other stats that changed
+Review ALL changes being released and ensure documentation reflects them. Check and update:
+
+- **README.md** — if new features, options, CLI commands, or API methods were added, document them with examples
+- **docs/API.md** — if new types, methods, or options were added
+- **docs/EXAMPLES.md** — if new usage patterns are relevant
+- **wiki/guide/** — if new features need a guide page or updates to existing guides
+- **landing/index.html** — if new features should be showcased (e.g. CLI commands, key capabilities), update the feature sections, stats (test count, package size), and any relevant code examples
+
+Do NOT skip this step. Every user-facing change MUST be documented before release. Read the existing docs first to understand the structure, then add the new content in the same style.
 
 ### 5. Build and verify
 

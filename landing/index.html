@@ -796,7 +796,7 @@
 <!-- Hero -->
 <section class="hero">
   <div class="container">
-    <div class="badge"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Available on npm &mdash; v0.5.3</div>
+    <div class="badge"><i data-lucide="sparkles" style="width:14px;height:14px"></i> Available on npm &mdash; v0.5.4</div>
     <h1>Claude Code<br><span class="gradient">In your code</span></h1>
     <img src="assets/logo.png" alt="Claude Connector" style="width:200px;margin:20px 0 8px">
     <div style="font-family:'Bangers',cursive;font-size:22px;letter-spacing:3px;margin-bottom:16px"><span style="color:var(--accent)">Claude</span> <span style="color:#FFFFFF">Connector</span></div>
@@ -891,7 +891,48 @@ console.<span class="fn">log</span>(result.<span class="prop">text</span>)
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="repeat" style="width:14px;height:14px;vertical-align:middle"></i></span> Swappable executor backends</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="alert-triangle" style="width:14px;height:14px;vertical-align:middle"></i></span> Typed error hierarchy</div>
       <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="package" style="width:14px;height:14px;vertical-align:middle"></i></span> Single runtime dependency (Agent SDK)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="download" style="width:14px;height:14px;vertical-align:middle"></i></span> CLI setup wizard (one-command install)</div>
+      <div><span style="color:var(--accent-bright);margin-right:8px"><i data-lucide="globe" style="width:14px;height:14px;vertical-align:middle"></i></span> HTTP proxy support (per-instance)</div>
     </div>
+  </div>
+</section>
+
+<!-- CLI Setup -->
+<section class="dark-stripe">
+  <div class="container">
+    <div class="section-label"><i data-lucide="terminal" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i> CLI Setup</div>
+    <h2>One command. Ready to code.</h2>
+    <p class="section-desc">Bootstrap Claude Code on a fresh server &mdash; install, authenticate, and get a working code example in seconds.</p>
+
+    <div class="code-window" style="max-width:720px;margin:32px auto 0">
+      <div class="code-header"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span><span style="margin-left:12px;font-size:12px;color:var(--text-muted)">terminal</span></div>
+<pre><span class="op">$</span> npx @scottwalker/claude-connector setup
+
+  <span class="fn">Claude Connector &mdash; Setup</span>
+
+  <span class="str">&#10004;</span> Node.js 22.1.0
+  <span class="str">&#10004;</span> Claude Code (2.1.87)
+  <span class="str">&#10004;</span> Config directory (/root/.claude)
+  <span class="str">&#10004;</span> Proxy (http://proxy:8080)
+  <span class="str">&#10004;</span> Authenticated
+
+  <span class="fn">Quick Start</span>
+
+  <span class="kw">import</span> { Claude } <span class="kw">from</span> <span class="str">'@scottwalker/claude-connector'</span>
+
+  <span class="kw">const</span> claude = <span class="kw">new</span> <span class="fn">Claude</span>({
+    model:          <span class="str">'sonnet'</span>,
+    permissionMode: <span class="str">'auto'</span>,
+    env: {
+      HTTPS_PROXY: <span class="str">'http://proxy:8080'</span>,
+    },
+  })
+
+  <span class="kw">const</span> result = <span class="kw">await</span> claude.<span class="fn">query</span>(<span class="str">'Hello!'</span>)
+  console.log(result.text)</pre>
+    </div>
+
+    <p style="text-align:center;margin-top:20px;font-size:14px;color:var(--text-muted)">Supports <strong>--proxy</strong> flag &bull; Custom config directories for isolated instances &bull; Per-instance <strong>env</strong> variables</p>
   </div>
 </section>
 
