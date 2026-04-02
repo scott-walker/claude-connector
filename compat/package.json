@@ -1,6 +1,6 @@
 {
   "name": "@scottwalker/claude-connector",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "This package has been renamed to @scottwalker/kraube-konnektor. Install that instead.",
   "type": "module",
   "main": "./index.js",
