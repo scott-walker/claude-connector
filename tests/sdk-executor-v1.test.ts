@@ -811,7 +811,7 @@ describe('SdkExecutor — structured output and error handling', () => {
     }
 
     const resultEvent = events.find((e) => e.type === 'result') as any;
-    expect(resultEvent.subtype).toBe('error');
+    expect(resultEvent.subtype).toBe('error_max_turns');
     expect(resultEvent.isError).toBe(true);
     expect(resultEvent.stopReason).toBe('max_turns');
     expect(resultEvent.numTurns).toBe(10);

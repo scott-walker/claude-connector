@@ -129,6 +129,19 @@ const result = await claude.query('Find bugs in src/')
 console.log(result.text)
 ```
 
+### Choosing a Mode
+
+|  | SDK mode (default) | CLI mode (`useSdk: false`) |
+|---|---|---|
+| Process | One persistent session | One `claude -p` spawn per query |
+| Speed | Fast after warm-up | Cold start every query |
+| Per-query overrides | Eight bridged — `model`, `permissionMode`, `thinking`, `effortLevel`, `fallbackModel`, `allowedTools`, `disallowedTools`, `additionalDirs` — plus `signal` and `systemPrompt`; see [Queries](./queries#what-actually-applies-in-sdk-mode) | Every option becomes a flag |
+| Control methods | All 26 available | Throw |
+| Hooks | JS callbacks (`hookCallbacks`) | Commands, prompts, agents, HTTP, MCP tools (`hooks`) |
+| Exclusive options | `sandbox`, `skills`, `canUseTool`, `sessionStore`, `toolAliases`, `managedSettings`, … | `mcpConfig`, `safeMode`, `bare`, `input`, `worktree`, `systemPromptFile`, … |
+
+Both modes read the same [`ClientOptions`](../api/types#clientoptions); the "Mode" note on each field says where it applies.
+
 ### SDK Lifecycle
 
 Track initialization progress in SDK mode:

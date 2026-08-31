@@ -30,19 +30,19 @@ const handle = claude.stream('Explain this code')
 
 ```typescript
 on(type: typeof EVENT_TEXT, callback: (text: string) => void): this
-on(type: typeof EVENT_TOOL_USE, callback: (event: StreamToolUseEvent) => void): this
-on(type: typeof EVENT_RESULT, callback: (event: StreamResultEvent) => void): this
-on(type: typeof EVENT_ERROR, callback: (event: StreamErrorEvent) => void): this
-on(type: typeof EVENT_SYSTEM, callback: (event: StreamSystemEvent) => void): this
-on(type: typeof EVENT_TASK_STARTED, callback: (event: StreamTaskStartedEvent) => void): this
-on(type: typeof EVENT_TASK_PROGRESS, callback: (event: StreamTaskProgressEvent) => void): this
-on(type: typeof EVENT_TASK_NOTIFICATION, callback: (event: StreamTaskNotificationEvent) => void): this
+on(type: EventName, callback: (event: MatchingStreamEvent) => void): this
 ```
 
-Register a callback for a specific event type. Returns `this` for chaining. Multiple callbacks per event type are supported.
+Register a callback for one event type. Returns `this` for chaining; multiple callbacks per type are supported.
+
+There is one overload per member of the [`StreamEvent`](./types#streamevent) union — 43 in total — so the callback parameter is narrowed to exactly that event. Passing an `EVENT_*` constant is enough for TypeScript to infer it.
 
 ::: tip
-The `EVENT_TEXT` callback receives just the text string for convenience. All other callbacks receive the full event object.
+The `EVENT_TEXT` callback receives just the text string, for convenience. Every other callback receives the full event object.
+:::
+
+::: warning Callback errors are contained
+A throwing callback does not break the stream for the other callbacks — dispatch is guarded per callback.
 :::
 
 ```typescript
@@ -61,6 +61,7 @@ const result = await claude.stream('Refactor auth module')
     console.log(`Session: ${event.sessionId}`)
     console.log(`Cost: $${event.cost}`)
     console.log(`Duration: ${event.durationMs}ms`)
+    if (event.isError) console.error(`Failed: ${event.subtype} (${event.terminalReason})`)
   })
   .on(EVENT_ERROR, (event) => {
     console.error(`Error: ${event.message}`)
@@ -74,18 +75,82 @@ const result = await claude.stream('Refactor auth module')
 
 ## Event Callbacks
 
-| Event | Constant | Callback Signature | Description |
-|-------|----------|--------------------|-------------|
-| `'text'` | `EVENT_TEXT` | `(text: string) => void` | Incremental text chunk |
-| `'tool_use'` | `EVENT_TOOL_USE` | `(event: StreamToolUseEvent) => void` | Tool invocation with name and input |
-| `'result'` | `EVENT_RESULT` | `(event: StreamResultEvent) => void` | Final result with usage, cost, duration |
-| `'error'` | `EVENT_ERROR` | `(event: StreamErrorEvent) => void` | Error with message and optional code |
-| `'system'` | `EVENT_SYSTEM` | `(event: StreamSystemEvent) => void` | System event with subtype and data |
-| `'task_started'` | `EVENT_TASK_STARTED` | `(event: StreamTaskStartedEvent) => void` | A subagent task has started (includes task ID and agent name) |
-| `'task_progress'` | `EVENT_TASK_PROGRESS` | `(event: StreamTaskProgressEvent) => void` | Progress update from a running subagent task |
-| `'task_notification'` | `EVENT_TASK_NOTIFICATION` | `(event: StreamTaskNotificationEvent) => void` | Notification from a subagent (completion, error, or status change) |
+Every constant below is a valid first argument to `.on()`. Grouped the same way as the [`StreamEvent`](./types#streamevent) reference, which carries each event's full field list.
 
-See [StreamEvent types](./types#streamevent) for full event type definitions.
+### Content and results
+
+| Event | Constant | Callback |
+|-------|----------|----------|
+| `'text'` | `EVENT_TEXT` | `(text: string) => void` |
+| `'thinking'` | `EVENT_THINKING` | `(event: StreamThinkingEvent) => void` |
+| `'thinking_tokens'` | `EVENT_THINKING_TOKENS` | `(event: StreamThinkingTokensEvent) => void` |
+| `'tool_use'` | `EVENT_TOOL_USE` | `(event: StreamToolUseEvent) => void` |
+| `'tool_result'` | `EVENT_TOOL_RESULT` | `(event: StreamToolResultEvent) => void` |
+| `'tool_progress'` | `EVENT_TOOL_PROGRESS` | `(event: StreamToolProgressEvent) => void` |
+| `'tool_use_summary'` | `EVENT_TOOL_USE_SUMMARY` | `(event: StreamToolUseSummaryEvent) => void` |
+| `'result'` | `EVENT_RESULT` | `(event: StreamResultEvent) => void` |
+| `'error'` | `EVENT_ERROR` | `(event: StreamErrorEvent) => void` |
+| `'partial_message'` | `EVENT_PARTIAL_MESSAGE` | `(event: StreamPartialMessageEvent) => void` |
+| `'local_command_output'` | `EVENT_LOCAL_COMMAND_OUTPUT` | `(event: StreamLocalCommandOutputEvent) => void` |
+
+### Tasks and subagents
+
+| Event | Constant | Callback |
+|-------|----------|----------|
+| `'task_started'` | `EVENT_TASK_STARTED` | `(event: StreamTaskStartedEvent) => void` |
+| `'task_progress'` | `EVENT_TASK_PROGRESS` | `(event: StreamTaskProgressEvent) => void` |
+| `'task_notification'` | `EVENT_TASK_NOTIFICATION` | `(event: StreamTaskNotificationEvent) => void` |
+| `'task_updated'` | `EVENT_TASK_UPDATED` | `(event: StreamTaskUpdatedEvent) => void` |
+| `'background_tasks_changed'` | `EVENT_BACKGROUND_TASKS_CHANGED` | `(event: StreamBackgroundTasksChangedEvent) => void` |
+
+### Session and runtime
+
+| Event | Constant | Callback |
+|-------|----------|----------|
+| `'init'` | `EVENT_INIT` | `(event: StreamInitEvent) => void` |
+| `'system'` | `EVENT_SYSTEM` | `(event: StreamSystemEvent) => void` |
+| `'session_state_changed'` | `EVENT_SESSION_STATE_CHANGED` | `(event: StreamSessionStateChangedEvent) => void` |
+| `'status'` | `EVENT_STATUS` | `(event: StreamStatusEvent) => void` |
+| `'worker_shutting_down'` | `EVENT_WORKER_SHUTTING_DOWN` | `(event: StreamWorkerShuttingDownEvent) => void` |
+| `'conversation_reset'` | `EVENT_CONVERSATION_RESET` | `(event: StreamConversationResetEvent) => void` |
+| `'mirror_error'` | `EVENT_MIRROR_ERROR` | `(event: StreamMirrorErrorEvent) => void` |
+| `'compact_boundary'` | `EVENT_COMPACT_BOUNDARY` | `(event: StreamCompactBoundaryEvent) => void` |
+| `'context_usage'` | `EVENT_CONTEXT_USAGE` | `(event: StreamContextUsageEvent) => void` |
+| `'files_persisted'` | `EVENT_FILES_PERSISTED` | `(event: StreamFilesPersistedEvent) => void` |
+
+### Resilience and quotas
+
+| Event | Constant | Callback |
+|-------|----------|----------|
+| `'rate_limit'` | `EVENT_RATE_LIMIT` | `(event: StreamRateLimitEvent) => void` |
+| `'api_retry'` | `EVENT_API_RETRY` | `(event: StreamApiRetryEvent) => void` |
+| `'model_refusal_fallback'` | `EVENT_MODEL_REFUSAL_FALLBACK` | `(event: StreamModelRefusalFallbackEvent) => void` |
+| `'model_refusal_no_fallback'` | `EVENT_MODEL_REFUSAL_NO_FALLBACK` | `(event: StreamModelRefusalNoFallbackEvent) => void` |
+| `'control_request_progress'` | `EVENT_CONTROL_REQUEST_PROGRESS` | `(event: StreamControlRequestProgressEvent) => void` |
+
+### Permissions, hooks and notices
+
+| Event | Constant | Callback |
+|-------|----------|----------|
+| `'permission_denied'` | `EVENT_PERMISSION_DENIED` | `(event: StreamPermissionDeniedEvent) => void` |
+| `'hook_started'` | `EVENT_HOOK_STARTED` | `(event: StreamHookStartedEvent) => void` |
+| `'hook_progress'` | `EVENT_HOOK_PROGRESS` | `(event: StreamHookProgressEvent) => void` |
+| `'hook_response'` | `EVENT_HOOK_RESPONSE` | `(event: StreamHookResponseEvent) => void` |
+| `'notification'` | `EVENT_NOTIFICATION` | `(event: StreamNotificationEvent) => void` |
+| `'informational'` | `EVENT_INFORMATIONAL` | `(event: StreamInformationalEvent) => void` |
+| `'prompt_suggestion'` | `EVENT_PROMPT_SUGGESTION` | `(event: StreamPromptSuggestionEvent) => void` |
+| `'auth_status'` | `EVENT_AUTH_STATUS` | `(event: StreamAuthStatusEvent) => void` |
+
+### Environment changes
+
+| Event | Constant | Callback |
+|-------|----------|----------|
+| `'memory_recall'` | `EVENT_MEMORY_RECALL` | `(event: StreamMemoryRecallEvent) => void` |
+| `'commands_changed'` | `EVENT_COMMANDS_CHANGED` | `(event: StreamCommandsChangedEvent) => void` |
+| `'plugin_install'` | `EVENT_PLUGIN_INSTALL` | `(event: StreamPluginInstallEvent) => void` |
+| `'elicitation_complete'` | `EVENT_ELICITATION_COMPLETE` | `(event: StreamElicitationCompleteEvent) => void` |
+
+See [StreamEvent types](./types#streamevent) for the full field list of each event.
 
 #### Task Event Example
 
@@ -105,6 +170,21 @@ const result = await claude.stream('Run all agents on this codebase')
   })
   .on(EVENT_TASK_NOTIFICATION, (event) => {
     console.log(`Task ${event.taskId} [${event.status}]: ${event.summary}`)
+  })
+  .done()
+```
+
+#### Reasoning Example
+
+```typescript
+import { Claude, EVENT_THINKING, EVENT_THINKING_TOKENS } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ thinking: { type: 'enabled', budgetTokens: 8000 } })
+
+await claude.stream('Design a migration plan')
+  .on(EVENT_THINKING_TOKENS, (e) => process.stderr.write(`\rthinking: ${e.estimatedTokens}`))
+  .on(EVENT_THINKING, (e) => {
+    if (!e.redacted) console.log(`\n[reasoning] ${e.thinking}`)
   })
   .done()
 ```

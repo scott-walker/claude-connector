@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { parseJsonResult } from '../parser/json-parser.js';
-import { parseStreamLine } from '../parser/stream-parser.js';
+import { parseStreamEvents } from '../parser/stream-parser.js';
 import { CliExecutionError, CliNotFoundError, CliTimeoutError } from '../errors/errors.js';
 import type { QueryResult, StreamEvent } from '../types/index.js';
 import type { IExecutor, ExecuteOptions } from './interface.js';
@@ -12,6 +12,7 @@ import {
   SIGNAL_SIGTERM,
   EVENT_SYSTEM,
   SYSTEM_STDERR,
+  ABORT_MESSAGE,
 } from '../constants.js';
 
 /**
@@ -28,6 +29,14 @@ import {
  * - Non-zero exit code → {@link CliExecutionError}
  * - `ENOENT` (binary not found) → {@link CliNotFoundError}
  * - Timeout → {@link CliTimeoutError}
+ *
+ * ## The prompt
+ *
+ * `args` already carries the prompt as a positional — {@link buildArgs} puts it
+ * there. {@link ExecuteOptions.prompt} is the same string passed out of band, and
+ * this executor appends it only when argv does not already contain it. That
+ * makes the prompt independent of argv layout for every executor, so no one has
+ * to re-derive it by parsing flags back apart.
  *
  * ## Lifecycle
  *
@@ -63,22 +72,33 @@ export class CliExecutor implements IExecutor {
     this.activeProcess = child;
 
     // Wire AbortSignal for per-query cancellation
-    if (options.signal) {
-      if (options.signal.aborted) {
+    const signal = options.signal;
+    let detachAbort: (() => void) | undefined;
+
+    if (signal) {
+      if (signal.aborted) {
         child.kill(SIGNAL_SIGTERM);
         this.activeProcess = null;
         return;
       }
-      options.signal.addEventListener('abort', () => {
+      const onAbort = () => {
         if (!child.killed) {
           child.kill(SIGNAL_SIGTERM);
         }
-      }, { once: true });
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      detachAbort = () => signal.removeEventListener('abort', onAbort);
     }
 
     try {
       yield* this.readStream(child);
     } finally {
+      // Runs on early `break`/`return` from the consumer too, so a caller that
+      // stops iterating does not leave the process running.
+      detachAbort?.();
+      if (isRunning(child)) {
+        child.kill(SIGNAL_SIGTERM);
+      }
       this.activeProcess = null;
     }
   }
@@ -94,7 +114,7 @@ export class CliExecutor implements IExecutor {
 
   private spawnProcess(args: readonly string[], options: ExecuteOptions): ChildProcess {
     try {
-      const child = spawn(this.executable, args as string[], {
+      const child = spawn(this.executable, withPrompt(args, options.prompt), {
         cwd: options.cwd,
         env: { ...process.env, ...options.env },
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -125,18 +145,23 @@ export class CliExecutor implements IExecutor {
       this.activeProcess = child;
 
       // Wire AbortSignal to kill the process
-      if (options.signal) {
-        if (options.signal.aborted) {
+      const signal = options.signal;
+      let detachAbort: (() => void) | undefined;
+
+      if (signal) {
+        if (signal.aborted) {
           child.kill(SIGNAL_SIGTERM);
           this.activeProcess = null;
-          reject(new Error('Query aborted'));
+          reject(new Error(ABORT_MESSAGE));
           return;
         }
-        options.signal.addEventListener('abort', () => {
+        const onAbort = () => {
           if (!child.killed) {
             child.kill(SIGNAL_SIGTERM);
           }
-        }, { once: true });
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        detachAbort = () => signal.removeEventListener('abort', onAbort);
       }
 
       const chunks: Buffer[] = [];
@@ -165,6 +190,7 @@ export class CliExecutor implements IExecutor {
 
       child.on('error', (err: NodeJS.ErrnoException) => {
         clearTimeout(timer);
+        detachAbort?.();
         this.activeProcess = null;
 
         if (err.code === ERR_ENOENT) {
@@ -176,7 +202,15 @@ export class CliExecutor implements IExecutor {
 
       child.on('close', (exitCode) => {
         clearTimeout(timer);
+        detachAbort?.();
         this.activeProcess = null;
+
+        // A kill from the abort listener closes the process with no output;
+        // surface the cancellation rather than an empty successful result.
+        if (signal?.aborted) {
+          reject(new Error(ABORT_MESSAGE));
+          return;
+        }
 
         resolve({
           stdout: Buffer.concat(chunks).toString('utf-8'),
@@ -191,7 +225,16 @@ export class CliExecutor implements IExecutor {
     // Buffer for incomplete lines (NDJSON may arrive in partial chunks)
     let buffer = '';
 
-    const iterator = createAsyncIterator<StreamEvent | null>(
+    // One line can carry several events — an assistant turn with a wrapper error
+    // and two content blocks is three — so every parse result is drained, not
+    // just its first entry.
+    const pushLine = (line: string, push: (event: StreamEvent) => void): void => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      for (const event of parseStreamEvents(trimmed)) push(event);
+    };
+
+    const iterator = createAsyncIterator<StreamEvent>(
       child,
       (chunk: Buffer, push) => {
         buffer += chunk.toString('utf-8');
@@ -200,34 +243,39 @@ export class CliExecutor implements IExecutor {
         // Keep the last (possibly incomplete) line in the buffer
         buffer = lines.pop() ?? '';
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-
-          const event = parseStreamLine(trimmed);
-          if (event) push(event);
-        }
+        for (const line of lines) pushLine(line, push);
       },
-      () => {
+      (push) => {
         // Flush remaining buffer on stream end
-        const trimmed = buffer.trim();
-        if (trimmed) {
-          const event = parseStreamLine(trimmed);
-          if (event) return event;
-        }
-        return null;
+        pushLine(buffer, push);
       },
     );
 
-    for await (const event of iterator) {
-      if (event !== null) {
-        yield event;
-      }
-    }
+    yield* iterator;
   }
 }
 
 // ── Utility ───────────────────────────────────────────────────────
+
+/**
+ * Argv actually handed to the binary.
+ *
+ * {@link buildArgs} already places the prompt as a positional, so this normally
+ * returns `args` unchanged. It appends {@link ExecuteOptions.prompt} only when
+ * argv does not contain that exact string — the safety net for a caller that
+ * built flags without a positional. Two identical strings (a prompt equal to a
+ * flag value) are indistinguishable here, and collapsing them is the harmless
+ * direction: the prompt was already on the command line.
+ */
+function withPrompt(args: readonly string[], prompt: string | undefined): string[] {
+  if (!prompt || args.includes(prompt)) return [...args];
+  return [...args, prompt];
+}
+
+/** Whether the process is still alive, i.e. it is safe to signal it. */
+function isRunning(child: ChildProcess): boolean {
+  return !child.killed && child.exitCode === null && child.signalCode === null;
+}
 
 function isNodeError(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
@@ -236,11 +284,14 @@ function isNodeError(err: unknown): err is NodeJS.ErrnoException {
 /**
  * Creates an async iterator from a child process stdout.
  * Handles backpressure, errors, and process exit.
+ *
+ * Both callbacks emit through `push`, so a single chunk — or the trailing
+ * unterminated line handed to `onEnd` — may yield any number of items.
  */
 function createAsyncIterator<T>(
   child: ChildProcess,
   onData: (chunk: Buffer, push: (item: T) => void) => void,
-  onEnd: () => T | null,
+  onEnd: (push: (item: T) => void) => void,
 ): AsyncIterable<T> {
   return {
     [Symbol.asyncIterator]() {
@@ -275,8 +326,7 @@ function createAsyncIterator<T>(
         if (done) return;
         done = true;
 
-        const final = onEnd();
-        if (final !== null) push(final);
+        onEnd(push);
 
         if (resolve) {
           const r = resolve;
@@ -296,11 +346,14 @@ function createAsyncIterator<T>(
           if (queue.length > 0) {
             return Promise.resolve({ value: queue.shift()!, done: false });
           }
-          if (done) {
-            return Promise.resolve({ value: undefined as T, done: true });
-          }
+          // `error` is checked BEFORE `done`: the 'error' handler calls finish(),
+          // which sets `done`, so testing `done` first would report a failed
+          // spawn as a clean end-of-stream and swallow the error.
           if (error) {
             return Promise.reject(error);
+          }
+          if (done) {
+            return Promise.resolve({ value: undefined as T, done: true });
           }
           return new Promise((r) => {
             resolve = r;

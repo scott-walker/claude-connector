@@ -4,13 +4,18 @@ Connect [Model Context Protocol](https://modelcontextprotocol.io/) servers to ex
 
 ## From Config Files
 
+`mcpConfig` is CLI mode only — the SDK has no config-file channel, and passing
+it with `useSdk` left at its default throws a `ValidationError` at construction.
+
 ```ts
 const claude = new Claude({
+  useSdk: false,
   mcpConfig: './mcp-servers.json',
 })
 
 // Multiple config files
-const claude = new Claude({
+const multi = new Claude({
+  useSdk: false,
   mcpConfig: ['./mcp-local.json', './mcp-shared.json'],
 })
 ```
@@ -35,7 +40,7 @@ const claude = new Claude({
     database: {
       type: 'sse',
       url: 'http://localhost:8080/sse',
-      env: { DB_URL: 'postgres://localhost/mydb' },
+      headers: { Authorization: 'Bearer sse-token' },
     },
   },
 })
@@ -86,17 +91,20 @@ const server = await createSdkMcpServer({
       'getPrice',
       'Get current stock price',
       { ticker: z.string() },
-      async ({ ticker }) => ({
-        content: [{ type: 'text', text: `${ticker}: $142.50` }],
-      }),
+      // `args` is typed `unknown` — the schema is enforced at runtime
+      async (args) => {
+        const { ticker } = args as { ticker: string }
+        return { content: [{ type: 'text', text: `${ticker}: $142.50` }] }
+      },
     ),
     await sdkTool(
       'getWeather',
       'Get weather for a city',
       { city: z.string() },
-      async ({ city }) => ({
-        content: [{ type: 'text', text: `${city}: 22°C, sunny` }],
-      }),
+      async (args) => {
+        const { city } = args as { city: string }
+        return { content: [{ type: 'text', text: `${city}: 22°C, sunny` }] }
+      },
       { annotations: { readOnly: true } },
     ),
   ],
@@ -150,3 +158,48 @@ await claude.toggleMcpServer('analytics', false)
 // Re-enable it
 await claude.toggleMcpServer('analytics', true)
 ```
+
+### `setMcpPermissionModeOverride` — Pin One Server's Permission Mode
+
+Pin a single server's approval behavior independently of the session's:
+
+```ts
+// Let the CLI decide for this server, whatever the session mode is
+await claude.setMcpPermissionModeOverride('analytics', 'auto')
+
+// Always prompt for it
+await claude.setMcpPermissionModeOverride('analytics', 'default')
+
+// Drop the pin
+await claude.setMcpPermissionModeOverride('analytics', null)
+```
+
+### `mcpServerStatus` — Inspect Connections
+
+```ts
+for (const server of await claude.mcpServerStatus()) {
+  console.log(server.name, server.status)
+}
+```
+
+Connectors proxied through claude.ai appear here with transport `MCP_CLAUDEAI_PROXY` (`'claudeai-proxy'`); they are reported, never configured directly.
+
+## Per-Tool Policies
+
+HTTP and SSE servers accept a `tools` policy list, so individual remote tools can be allowed or denied without touching `allowedTools`. `alwaysLoad` keeps a server's tool schemas in context instead of deferring them:
+
+```ts
+const claude = new Claude({
+  mcpServers: {
+    linear: {
+      type: 'http',
+      url: 'https://mcp.linear.app/mcp',
+      headers: { Authorization: `Bearer ${token}` },
+      alwaysLoad: true,
+      timeout: 10_000,
+    },
+  },
+})
+```
+
+Deferred tool schemas show up in [`getContextUsage()`](../api/#getcontextusage) under `mcpTools`, which is the fastest way to see what MCP is costing you in context.

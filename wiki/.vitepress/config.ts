@@ -19,7 +19,7 @@ export default defineConfig({
       { text: 'API', link: '/api/' },
       { text: 'Landing', link: 'https://scott-walker.github.io/kraube-konnektor/' },
       {
-        text: 'v0.6.1',
+        text: 'v0.7.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'npm', link: 'https://www.npmjs.com/package/@scottwalker/kraube-konnektor' },
@@ -53,6 +53,7 @@ export default defineConfig({
             { text: 'MCP Servers', link: '/guide/mcp' },
             { text: 'Agents', link: '/guide/agents' },
             { text: 'Tool Control', link: '/guide/tools' },
+            { text: 'Hooks', link: '/guide/hooks' },
             { text: 'Structured Output', link: '/guide/structured-output' },
             { text: 'Error Handling', link: '/guide/errors' },
           ],
@@ -74,9 +75,16 @@ export default defineConfig({
             { text: 'StreamHandle', link: '/api/stream-handle' },
             { text: 'ChatHandle', link: '/api/chat-handle' },
             { text: 'Session', link: '/api/session' },
+            { text: 'Session Management', link: '/api/session-management' },
             { text: 'ScheduledJob', link: '/api/scheduled-job' },
-            { text: 'Constants', link: '/api/constants' },
+          ],
+        },
+        {
+          text: 'Reference',
+          items: [
             { text: 'Types', link: '/api/types' },
+            { text: 'Hooks', link: '/api/hooks' },
+            { text: 'Constants', link: '/api/constants' },
             { text: 'Errors', link: '/api/errors' },
             { text: 'IExecutor', link: '/api/executor' },
           ],

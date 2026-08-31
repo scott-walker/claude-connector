@@ -102,7 +102,9 @@ src/
 ├── types/                Type definitions (no runtime code)
 │   ├── client.ts         ClientOptions, QueryOptions, PermissionMode, EffortLevel
 │   ├── result.ts         QueryResult, StreamEvent, TokenUsage, Message
-│   └── session.ts        SessionOptions, SessionInfo
+│   ├── hooks.ts          HookEvent, HookInput, HookJSONOutput, HookEntry
+│   ├── settings.ts       Settings, ResolvedSettings, ResolveSettingsOptions
+│   └── session.ts        SessionOptions, SessionInfo, SessionStore
 ├── executor/             Execution abstraction
 │   ├── interface.ts      IExecutor, ExecuteOptions
 │   ├── sdk-executor.ts   SDK implementation (persistent session, default)
@@ -199,8 +201,8 @@ claude.stream('Rewrite module')
        ├─ .done()                 → consume iterable, dispatch events
        │     │
        │     └─ for each NDJSON line:
-       │          parseStreamLine(line) → StreamEvent
-       │          dispatch to registered callbacks
+       │          parseStreamEvents(line) → StreamEvent[]
+       │          dispatch every event on the line to its callbacks
        │
        ├─ .text()                 → collect text, return string
        ├─ .pipe(writable)         → pipe text, return result
@@ -218,7 +220,7 @@ claude.chat()
        │
        ├─ spawn process with stdin open
        ├─ .send(prompt) → write JSON to stdin, await result
-       ├─ stdout → parseStreamLine → dispatch to callbacks
+       ├─ stdout → parseStreamEvents → dispatch every event on the line
        ├─ .toDuplex() → Node.js Duplex (write prompts, read text)
        └─ .end() → close stdin → process exits
 ```
@@ -245,7 +247,7 @@ KraubeKonnektorError          Base class (catch-all)
 - **StreamHandle tests**: Verify `.on()`, `.done()`, `.text()`, `.pipe()`, `.toReadable()`, and `for await`.
 - **ChatHandle tests**: Verify lifecycle (properties, close, abort, send-after-close).
 - **Scheduler tests**: Use `vi.useFakeTimers()` for deterministic timing.
-- **122 tests** across 10 test files.
+- **705 tests** across 26 test files.
 
 ## Future Extensibility
 
@@ -262,9 +264,18 @@ KraubeKonnektorError          Base class (catch-all)
 
 1. Add the constant to `constants.ts`
 2. Add the type to the `StreamEvent` union in `types/result.ts`
-3. Add parsing logic in `stream-parser.ts`
-4. Add dispatch case in `StreamHandle` and `ChatHandle`
+3. Add parsing logic in `stream-parser.ts` (CLI mode) and `sdk-executor.ts` (SDK mode)
+4. Add the `.on()` overload in `StreamHandle` and `ChatHandle`
 5. Unknown types are already forwarded as `EVENT_SYSTEM` events, so existing code won't break
+
+### Adding New Hook Events
+
+1. Add the `HOOK_*` constant to `constants.ts` and to `VALID_HOOK_EVENTS`
+2. Add the per-event input interface to `types/hooks.ts` and to the `HookInput` union
+3. Add the per-event output interface and, if the event accepts one, the `HookSpecificOutput` union
+4. Re-export both from `index.ts`
+
+`HooksConfig` and `hookCallbacks` are keyed by `HookEvent`, so no wiring is needed beyond that.
 
 ## Custom Executor
 

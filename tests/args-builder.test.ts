@@ -279,7 +279,15 @@ describe('buildArgs', () => {
 
     expect(args).toContain('--settings');
     const idx = args.indexOf('--settings');
-    expect(JSON.parse(args[idx + 1]!)).toEqual({ hooks });
+    // The CLI settings schema requires a `type` discriminator on every hook
+    // entry; the builder injects the command form when it is omitted.
+    expect(JSON.parse(args[idx + 1]!)).toEqual({
+      hooks: {
+        PreToolUse: [
+          { matcher: '.*', hooks: [{ type: 'command', command: 'echo pre' }] },
+        ],
+      },
+    });
   });
 
   // ── New flags ─────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 import { ParseError } from '../errors/errors.js';
-import type { QueryResult, Message, TokenUsage } from '../types/index.js';
+import type { QueryResult, Message } from '../types/index.js';
+import { parseResultEvent } from './stream-parser.js';
 import {
-  KEY_RESULT, KEY_SESSION_ID, KEY_USAGE, KEY_INPUT_TOKENS, KEY_OUTPUT_TOKENS,
-  KEY_TOTAL_COST, KEY_DURATION, KEY_MESSAGES, KEY_CONTENT, KEY_ROLE, KEY_TEXT,
-  KEY_TYPE, KEY_STRUCTURED_OUTPUT, ROLE_ASSISTANT,
+  KEY_RESULT, KEY_MESSAGES, KEY_CONTENT, KEY_ROLE, KEY_TEXT,
+  KEY_TYPE, ROLE_ASSISTANT,
 } from '../constants.js';
 
 /**
@@ -38,30 +38,35 @@ export function parseJsonResult(stdout: string): QueryResult {
     throw new ParseError(`Failed to parse CLI JSON output: ${trimmed.slice(0, 200)}`, stdout);
   }
 
-  const usage = parseUsage(json[KEY_USAGE]);
+  // The one-shot JSON payload is the same object the stream emits as its
+  // `result` message, so it goes through the same mapping — otherwise CLI mode
+  // would keep reporting a fraction of the fields QueryResult declares.
+  const result = parseResultEvent(json);
   const messages = parseMessages(json[KEY_MESSAGES]);
 
   return {
     text: typeof json[KEY_RESULT] === 'string' ? json[KEY_RESULT] : extractText(json),
-    sessionId: String(json[KEY_SESSION_ID] ?? ''),
-    usage,
-    cost: typeof json[KEY_TOTAL_COST] === 'number' ? json[KEY_TOTAL_COST] : null,
-    durationMs: typeof json[KEY_DURATION] === 'number' ? json[KEY_DURATION] : 0,
+    sessionId: result.sessionId,
+    usage: result.usage,
+    cost: result.cost,
+    durationMs: result.durationMs,
     messages,
-    structured: json[KEY_STRUCTURED_OUTPUT] ?? null,
+    structured: result.structured ?? null,
     raw: json,
+    subtype: result.subtype,
+    isError: result.isError,
+    errors: result.errors,
+    terminalReason: result.terminalReason,
+    modelUsage: result.modelUsage,
+    permissionDenials: result.permissionDenials,
+    deferredToolUse: result.deferredToolUse,
+    durationApiMs: result.durationApiMs,
+    queuedTurnCount: result.queuedTurnCount,
+    ttftMs: result.ttftMs,
+    apiErrorStatus: result.apiErrorStatus,
+    fastModeState: result.fastModeState,
+    origin: result.origin,
   };
-}
-
-function parseUsage(raw: unknown): TokenUsage {
-  if (raw && typeof raw === 'object') {
-    const obj = raw as Record<string, unknown>;
-    return {
-      inputTokens: typeof obj[KEY_INPUT_TOKENS] === 'number' ? obj[KEY_INPUT_TOKENS] : 0,
-      outputTokens: typeof obj[KEY_OUTPUT_TOKENS] === 'number' ? obj[KEY_OUTPUT_TOKENS] : 0,
-    };
-  }
-  return { inputTokens: 0, outputTokens: 0 };
 }
 
 function parseMessages(raw: unknown): Message[] {

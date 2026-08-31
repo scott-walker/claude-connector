@@ -38,12 +38,17 @@ features:
   - icon:
       src: /icons/messages.svg
     title: Multi-turn Sessions
-    details: session.query() maintains context across turns. Resume, fork, continue — all via typed API.
+    details: session.query() keeps context across turns. Resume, fork, continue, rename, tag — plus transcript reads and custom storage.
     link: /guide/sessions
+  - icon:
+      src: /icons/workflow.svg
+    title: 33 Hook Events
+    details: Typed input and output for every lifecycle point. JS callbacks in SDK mode, commands, prompts, agents or HTTP in CLI mode.
+    link: /guide/hooks
   - icon:
       src: /icons/terminal.svg
     title: Full CLI Parity
-    details: 45+ CLI flags as typed options. Models, permissions, tools, MCP, agents, hooks, worktrees.
+    details: 60 CLI flags as typed options. Models, permissions, tools, skills, MCP, agents, sandboxing, worktrees.
     link: /guide/getting-started
   - icon:
       src: /icons/lock.svg

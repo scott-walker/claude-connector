@@ -6,6 +6,11 @@ Real-time integration of Claude Code into any Node.js application.
 import { Claude } from '@scottwalker/kraube-konnektor'
 ```
 
+A stream carries far more than text: **43 typed event variants** cover thinking,
+tool lifecycle, subagents, hooks, permissions, rate limits, model refusals and
+context pressure. Both executors produce the same union — see
+[Stream Events Reference](#stream-events-reference).
+
 ---
 
 ## Table of Contents
@@ -16,7 +21,12 @@ import { Claude } from '@scottwalker/kraube-konnektor'
   - [Pipe to Writable](#pipe-to-writable)
   - [Node.js Readable](#nodejs-readable)
   - [Async Iteration](#async-iteration)
-  - [Stream Events Reference](#stream-events-reference)
+  - [Stream Events Reference](#stream-events-reference) — all 43 variants
+  - [Reasoning and progress](#reasoning-and-progress)
+  - [Context pressure](#context-pressure)
+  - [Reliability signals](#reliability-signals)
+  - [Permission denials and host notices](#permission-denials-and-host-notices)
+  - [Background tasks](#background-tasks)
 - [ChatHandle — Bidirectional Streaming](#chathandle--bidirectional-streaming)
   - [Send and Await](#send-and-await)
   - [Continuous Pipe](#continuous-pipe)
@@ -180,28 +190,242 @@ for await (const event of claude.stream('Analyze the codebase')) {
 
 ### Stream Events Reference
 
-| Event | Constant | Callback Signature | Description |
-|-------|----------|-------------------|-------------|
-| `text` | `EVENT_TEXT` | `(text: string)` | Incremental text chunk |
-| `tool_use` | `EVENT_TOOL_USE` | `(event: { toolName, toolInput })` | Tool invocation |
-| `result` | `EVENT_RESULT` | `(event: { text, sessionId, usage, cost, durationMs })` | Final result |
-| `error` | `EVENT_ERROR` | `(event: { message, code? })` | Error |
-| `system` | `EVENT_SYSTEM` | `(event: { subtype, data })` | System event |
-| `tool_progress` | `EVENT_TOOL_PROGRESS` | `(event: { toolUseId, toolName, elapsedTimeSeconds, ... })` | Tool execution progress |
-| `tool_use_summary` | `EVENT_TOOL_USE_SUMMARY` | `(event: { summary, precedingToolUseIds })` | AI summary of tool usage |
-| `auth_status` | `EVENT_AUTH_STATUS` | `(event: { isAuthenticating, output, error? })` | MCP auth status |
-| `hook_started` | `EVENT_HOOK_STARTED` | `(event: { hookId, hookName, hookEvent })` | Hook started |
-| `hook_progress` | `EVENT_HOOK_PROGRESS` | `(event: { hookId, hookName, stdout, stderr, ... })` | Hook output |
-| `hook_response` | `EVENT_HOOK_RESPONSE` | `(event: { hookId, hookName, outcome, exitCode?, ... })` | Hook completed |
-| `files_persisted` | `EVENT_FILES_PERSISTED` | `(event: { files, failed, processedAt })` | File checkpoint |
-| `compact_boundary` | `EVENT_COMPACT_BOUNDARY` | `(event: { trigger, preTokens })` | Context compaction |
-| `local_command_output` | `EVENT_LOCAL_COMMAND_OUTPUT` | `(event: { content })` | Slash command output |
+`StreamEvent` is a discriminated union of **43 variants**. Narrow on
+`event.type`, and match against the exported `EVENT_*` constants rather than
+bare strings — that is what they exist for.
+
+**Which executor emits what.** Both do: `SdkExecutor` maps the SDK message
+union, `CliExecutor` runs every NDJSON line through `parseStreamEvents()`, and
+the two produce the same 43 variants — the modes are interchangeable from a
+consumer's point of view. A single NDJSON line can carry several events, and the
+plural reader returns all of them in wire order: an assistant turn contributes a
+wrapper-level `error`, one event per content block and its `/context` report; a
+user turn contributes one `tool_result` per parallel tool call. What differs
+between the modes is the *precondition*:
+
+- CLI mode only sees events on `--output-format stream-json`, i.e. through
+  `stream()` / `session.stream()` / `chat()`. `query()` uses `--output-format
+  json` and returns a [`QueryResult`](./API.md#queryresult) instead.
+- Some events only exist when the matching option was set (the **Requires**
+  column below). The args builder emits those flags for `stream()` and `chat()`
+  only; SDK mode passes them at session construction.
+- An event the running CLI does not produce simply never fires. Nothing is lost:
+  anything this version does not model arrives as `system` with its raw payload.
+
+`.on()` has one overload per variant, so the callback parameter is narrowed
+automatically. `text` is the only event whose callback receives the payload
+(the string) instead of the event object.
+
+#### Conversation
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `text` | `EVENT_TEXT` | `text` | — |
+| `thinking` | `EVENT_THINKING` | `thinking`, `signature?`, `redacted?` | `thinking` not `'disabled'` |
+| `thinking_tokens` | `EVENT_THINKING_TOKENS` | `estimatedTokens`, `estimatedTokensDelta` | thinking in progress |
+| `tool_use` | `EVENT_TOOL_USE` | `toolName`, `toolInput` | — |
+| `tool_result` | `EVENT_TOOL_RESULT` | `toolUseId`, `content`, `isError?`, `toolUseResult?`, `parentToolUseId?`, `isReplay?`, `isSynthetic?`, `subagentType?`, `origin?` | — |
+| `tool_progress` | `EVENT_TOOL_PROGRESS` | `toolUseId`, `toolName`, `parentToolUseId`, `elapsedTimeSeconds`, `taskId?`, `heartbeat?`, `subagentRetry?` | long-running tools |
+| `tool_use_summary` | `EVENT_TOOL_USE_SUMMARY` | `summary`, `precedingToolUseIds` | CLI-side summarization |
+| `result` | `EVENT_RESULT` | everything on [`QueryResult`](./API.md#queryresult) plus `stopReason?`, `numTurns?` | once per turn — last of the turn's own events, though trailing informational frames (`prompt_suggestion`, `task_notification`, `session_state_changed`) can follow it |
+| `error` | `EVENT_ERROR` | `message`, `code?`, `aborted?`, `requestId?` | API/turn failure, or a rejected `resumeDropsTurn` |
+
+#### Session lifecycle
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `init` | `EVENT_INIT` | `model`, `cwd`, `tools`, `skills`, `slashCommands`, `mcpServers`, `plugins`, `agents?`, `permissionMode`, `apiKeySource`, `claudeCodeVersion`, `outputStyle`, `betas?`, `effort?`, `capabilities?`, `fastModeState?` | first message of a session |
+| `session_state_changed` | `EVENT_SESSION_STATE_CHANGED` | `state`: `'idle' \| 'running' \| 'requires_action'` | — |
+| `status` | `EVENT_STATUS` | `status`: `'compacting' \| 'requesting' \| null`, `permissionMode?`, `compactResult?`, `compactError?` | — |
+| `compact_boundary` | `EVENT_COMPACT_BOUNDARY` | `trigger`, `preTokens`, `postTokens?`, `durationMs?`, `preservedMessages?`, `preservedSegment?` | auto or `/compact` |
+| `context_usage` | `EVENT_CONTEXT_USAGE` | `contextUsage: ContextUsage` | carried on assistant messages |
+| `conversation_reset` | `EVENT_CONVERSATION_RESET` | `newConversationId` | transcript restarted mid-stream |
+| `worker_shutting_down` | `EVENT_WORKER_SHUTTING_DOWN` | `reason` | worker is going away |
+
+#### Subagents & background work
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `task_started` | `EVENT_TASK_STARTED` | `taskId`, `toolUseId?`, `description`, `taskType?`, `prompt?`, `subagentType?`, `isBackgrounded?`, `spawnDepth?`, `workflowName?` | a subagent runs |
+| `task_progress` | `EVENT_TASK_PROGRESS` | `taskId`, `description`, `usage`, `lastToolName?`, `summary?`, `subagentType?` | `summary` needs `agentProgressSummaries` |
+| `task_notification` | `EVENT_TASK_NOTIFICATION` | `taskId`, `status`, `outputFile`, `summary`, `usage?` | task finished |
+| `task_updated` | `EVENT_TASK_UPDATED` | `taskId`, `patch` (`status?`, `description?`, `error?`, `endTime?`, `totalPausedMs?`, `isBackgrounded?`) — apply it over the task you hold, do not replace | task metadata changed |
+| `background_tasks_changed` | `EVENT_BACKGROUND_TASKS_CHANGED` | `tasks[]` (`taskId`, `taskType`, `description`, `ambient?`) — REPLACE semantics | a task was backgrounded or completed |
+
+#### Permissions & host UI
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `permission_denied` | `EVENT_PERMISSION_DENIED` | `toolName`, `toolUseId`, `message`, `agentId?`, `decisionReason?`, `decisionReasonType?` | a tool call was denied |
+| `notification` | `EVENT_NOTIFICATION` | `key`, `text`, `priority`, `color?`, `timeoutMs?` | host-facing toast |
+| `informational` | `EVENT_INFORMATIONAL` | `content`, `level`, `toolUseId?`, `preventContinuation?` | CLI notices |
+| `prompt_suggestion` | `EVENT_PROMPT_SUGGESTION` | `suggestion` | `promptSuggestions: true`. Arrives *after* the turn's `result`, from a separate model call — in SDK mode raise `postResultDrainMs` so the drain window is still open when it lands |
+| `local_command_output` | `EVENT_LOCAL_COMMAND_OUTPUT` | `content` | a local slash command ran |
+
+#### Hooks
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `hook_started` | `EVENT_HOOK_STARTED` | `hookId`, `hookName`, `hookEvent` | `includeHookEvents: true` |
+| `hook_progress` | `EVENT_HOOK_PROGRESS` | `hookId`, `hookName`, `hookEvent`, `stdout`, `stderr`, `output` | `includeHookEvents: true` |
+| `hook_response` | `EVENT_HOOK_RESPONSE` | `hookId`, `hookName`, `hookEvent`, `output`, `stdout`, `stderr`, `exitCode?`, `outcome` | `includeHookEvents: true` |
+
+#### Reliability
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `rate_limit` | `EVENT_RATE_LIMIT` | `status`, `rateLimitType?`, `utilization?`, `resetsAt?`, `overageStatus?`, `isUsingOverage?`, `data` | quota warning or rejection |
+| `api_retry` | `EVENT_API_RETRY` | `attempt`, `maxRetries`, `retryDelayMs`, `errorStatus`, `error` | a request is being retried |
+| `model_refusal_fallback` | `EVENT_MODEL_REFUSAL_FALLBACK` | `direction`, `scope?`, `originalModel`, `fallbackModel`, `requestId`, `refusalCategory?`, `retractedMessageUuids?`, `content` | model refused, a fallback exists |
+| `model_refusal_no_fallback` | `EVENT_MODEL_REFUSAL_NO_FALLBACK` | `originalModel`, `requestId`, `refusalCategory?`, `refusalExplanation?`, `content` | model refused, no fallback |
+| `mirror_error` | `EVENT_MIRROR_ERROR` | `error`, `key` (`projectKey`, `sessionId`, `subpath?`) | `sessionStore` mirroring failed |
+
+#### Environment
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `auth_status` | `EVENT_AUTH_STATUS` | `isAuthenticating`, `output`, `error?` | MCP OAuth flow |
+| `files_persisted` | `EVENT_FILES_PERSISTED` | `files`, `failed`, `processedAt` | file checkpointing |
+| `memory_recall` | `EVENT_MEMORY_RECALL` | `mode`, `memories[]` | memory files pulled into context |
+| `commands_changed` | `EVENT_COMMANDS_CHANGED` | `commands: SlashCommand[]` | commands reloaded |
+| `plugin_install` | `EVENT_PLUGIN_INSTALL` | `status`, `name?`, `error?` | plugin install progress |
+| `elicitation_complete` | `EVENT_ELICITATION_COMPLETE` | `mcpServerName`, `elicitationId` | URL-mode elicitation finished |
+| `control_request_progress` | `EVENT_CONTROL_REQUEST_PROGRESS` | `requestId`, `status`, `attempt?`, `maxRetries?`, `retryDelayMs?` | long-running control request |
+
+#### Escape hatches
+
+| Event | Constant | Key fields | Requires |
+|---|---|---|---|
+| `partial_message` | `EVENT_PARTIAL_MESSAGE` | `event` (raw provider delta), `parentToolUseId`, `ttftMs?`, `userMessageUuid?` | `includePartialMessages: true` |
+| `system` | `EVENT_SYSTEM` | `subtype`, `data` | anything this version does not model |
+
+### Reasoning and progress
+
+Thinking arrives as full blocks (`thinking`) with a running token estimate
+between them (`thinking_tokens`) — useful for a "still thinking…" indicator that
+does not leak the reasoning itself.
+
+```ts
+import { Claude, EVENT_THINKING, EVENT_THINKING_TOKENS, EVENT_TEXT } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ thinking: { type: 'enabled', budgetTokens: 20_000 } })
+
+await claude.stream('Design a migration plan')
+  .on(EVENT_THINKING_TOKENS, (event) => process.stderr.write(`\rthinking… ${event.estimatedTokens} tokens`))
+  .on(EVENT_THINKING, (event) => {
+    if (event.redacted) console.error('\n[redacted reasoning]')
+    else console.error(`\n[thinking] ${event.thinking.slice(0, 120)}…`)
+  })
+  .on(EVENT_TEXT, (text) => process.stdout.write(text))
+  .done()
+```
+
+### Context pressure
+
+```ts
+import { Claude, EVENT_CONTEXT_USAGE, EVENT_COMPACT_BOUNDARY } from '@scottwalker/kraube-konnektor'
+
+await claude.stream('Refactor the whole package')
+  .on(EVENT_CONTEXT_USAGE, ({ contextUsage }) => {
+    if (contextUsage.percentage > 80) {
+      console.warn(`context ${contextUsage.percentage}% of ${contextUsage.rawMaxTokens}`)
+    }
+  })
+  .on(EVENT_COMPACT_BOUNDARY, (event) => {
+    console.warn(`compacted (${event.trigger}): ${event.preTokens} → ${event.postTokens ?? '?'}`)
+  })
+  .done()
+```
+
+### Reliability signals
+
+Rate limits, retries and model refusals all arrive as events instead of
+exceptions, so a long-running turn can be observed rather than guessed at.
+
+```ts
+import {
+  Claude,
+  EVENT_RATE_LIMIT, EVENT_API_RETRY,
+  EVENT_MODEL_REFUSAL_FALLBACK, EVENT_MODEL_REFUSAL_NO_FALLBACK,
+} from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ model: 'opus', fallbackModel: ['sonnet', 'haiku'] })
+
+await claude.stream('Summarize the incident report')
+  .on(EVENT_RATE_LIMIT, (event) => {
+    if (event.status === 'rejected') console.error(`quota exhausted (${event.rateLimitType})`)
+    else if (event.status === 'allowed_warning') console.warn(`quota ${event.utilization ?? 0}% used`)
+  })
+  .on(EVENT_API_RETRY, (event) => {
+    console.warn(`retry ${event.attempt}/${event.maxRetries} in ${event.retryDelayMs}ms (${event.errorStatus})`)
+  })
+  .on(EVENT_MODEL_REFUSAL_FALLBACK, (event) => {
+    console.warn(`${event.originalModel} refused → ${event.fallbackModel} (${event.direction})`)
+    // `retractedMessageUuids` names content the CLI withdrew — drop it from your own transcript
+    for (const uuid of event.retractedMessageUuids ?? []) console.warn(`  retracted ${uuid}`)
+  })
+  .on(EVENT_MODEL_REFUSAL_NO_FALLBACK, (event) => {
+    console.error(`${event.originalModel} refused with no fallback: ${event.refusalExplanation ?? ''}`)
+  })
+  .done()
+```
+
+### Permission denials and host notices
+
+```ts
+import {
+  Claude, EVENT_PERMISSION_DENIED, EVENT_NOTIFICATION, EVENT_INFORMATIONAL,
+} from '@scottwalker/kraube-konnektor'
+
+await claude.stream('Deploy to staging')
+  .on(EVENT_PERMISSION_DENIED, (event) => {
+    console.warn(`denied ${event.toolName}: ${event.message} (${event.decisionReasonType ?? 'rule'})`)
+  })
+  .on(EVENT_NOTIFICATION, (event) => {
+    if (event.priority === 'immediate' || event.priority === 'high') console.error(event.text)
+  })
+  .on(EVENT_INFORMATIONAL, (event) => console.log(`[${event.level}] ${event.content}`))
+  .done()
+```
+
+The same denials are aggregated on the result event as `permissionDenials`, so a
+batch job can report them once instead of subscribing.
+
+### Background tasks
+
+`backgroundTasks()` is the Ctrl+B affordance: it pushes the running tool call
+into the background so the turn can continue.
+
+```ts
+import { Claude, EVENT_TOOL_PROGRESS, EVENT_BACKGROUND_TASKS_CHANGED } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ perTaskStopAffordance: true })
+
+await claude.stream('Run the full test suite, then summarize failures')
+  .on(EVENT_TOOL_PROGRESS, async (event) => {
+    if (event.elapsedTimeSeconds > 120) await claude.backgroundTasks(event.toolUseId)
+  })
+  .on(EVENT_BACKGROUND_TASKS_CHANGED, (event) => {
+    // level signal: swap your whole cached set for `event.tasks`
+    for (const task of event.tasks) console.log(`[bg] ${task.taskId}: ${task.description}`)
+  })
+  .done()
+```
 
 ---
 
 ## ChatHandle — Bidirectional Streaming
 
-`claude.chat()` returns a `ChatHandle` — a persistent CLI process for multi-turn real-time conversation.
+`claude.chat()` returns a `ChatHandle` — a persistent CLI process
+(`--input-format stream-json`) for multi-turn real-time conversation.
+
+`chat()` never goes through the executor: it owns its own process and carries
+each turn's prompt on `send()`, so it behaves identically whether or not the
+client was built with `useSdk: false`. It exposes the same `.on()` overloads as
+`StreamHandle` — all 43 events — and reads its process output through the same
+`parseStreamEvents()` reader `CliExecutor` uses, so a line carrying several
+events (a `/context` turn's rendered table *and* its structured report, an
+assistant line with both a thinking and a text block) dispatches all of them.
 
 ### Send and Await
 
@@ -657,9 +881,20 @@ const result = await claude.stream('Analyze the entire repo', { maxBudget: MAX_C
   .on(EVENT_RESULT, (event) => {
     const pct = ((event.cost ?? 0) / MAX_COST * 100).toFixed(1)
     console.log(`\nBudget: $${event.cost} / $${MAX_COST} (${pct}%)`)
+
+    // Did it finish, or did it run out?
+    if (event.terminalReason === 'budget_exhausted') console.warn('budget exhausted')
+
+    // Per-model breakdown, including the cache tokens that dominate long runs
+    for (const [model, usage] of Object.entries(event.modelUsage ?? {})) {
+      console.log(`  ${model}: $${usage.costUsd.toFixed(4)} (cache ${usage.cacheReadInputTokens}r)`)
+    }
   })
   .done()
 ```
+
+`maxBudget` is a hard stop in USD. `taskBudgetTokens` is the softer sibling: the
+model is *told* how many tokens it has left, so it can pace its tool use.
 
 ### Tool Activity Logger
 
@@ -728,39 +963,52 @@ console.log('API review:', api.slice(0, 100))
 
 ### Timeout and Abort
 
-```ts
-import { Claude, EVENT_TEXT } from '@scottwalker/kraube-konnektor'
+Prefer a per-query `AbortSignal` over `claude.abort()`: the signal cancels one
+turn, while `abort()` tears the whole session down (SDK mode) or kills the
+process (CLI mode).
 
-const claude = new Claude({ useSdk: false })
+```ts
+import { Claude, EVENT_TEXT, EVENT_RESULT } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude()
 
 const controller = new AbortController()
-
-// Abort after 30 seconds
-const timer = setTimeout(() => claude.abort(), 30_000)
+const timer = setTimeout(() => controller.abort(), 30_000)
 
 try {
-  const result = await claude.stream('Analyze everything')
+  const result = await claude.stream('Analyze everything', { signal: controller.signal })
     .on(EVENT_TEXT, (t) => process.stdout.write(t))
+    // `stream()` does not throw on abort — the aborted result still arrives
+    .on(EVENT_RESULT, (e) => console.log(`\n${e.terminalReason ?? 'done'}`))
     .done()
 
   clearTimeout(timer)
   console.log(`\nCompleted in ${result.durationMs}ms`)
 } catch (err) {
-  console.log('\nAborted or failed:', (err as Error).message)
+  clearTimeout(timer)
+  console.log('\nFailed:', (err as Error).message)
 }
 ```
+
+On abort, SDK mode interrupts the turn and keeps reading to the result, so the
+session is ready for the next query; `terminalReason` is then
+`'aborted_streaming'` or `'aborted_tools'`.
 
 ### Error Handling
 
 ```ts
-import { CliNotFoundError, CliExecutionError, CliTimeoutError, EVENT_TEXT, EVENT_ERROR } from '@scottwalker/kraube-konnektor'
+import { CliNotFoundError, CliExecutionError, CliTimeoutError, EVENT_TEXT, EVENT_ERROR, EVENT_RESULT } from '@scottwalker/kraube-konnektor'
 
 try {
   await claude.stream('Do something')
     .on(EVENT_TEXT, (t) => process.stdout.write(t))
     .on(EVENT_ERROR, (event) => {
       // Stream-level errors (Claude reports an issue)
-      console.error(`\nStream error: ${event.message}`)
+      console.error(`\nStream error: ${event.message}`, event.code ?? '')
+    })
+    .on(EVENT_RESULT, (event) => {
+      // Not every unhappy ending is an error — `terminalReason` says which it was
+      if (event.terminalReason !== 'completed') console.warn(event.terminalReason)
     })
     .done()
 } catch (err) {

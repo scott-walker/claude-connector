@@ -42,6 +42,39 @@ const claude = new Claude({
 const result = await claude.query('Review the auth module')
 ```
 
+## Scoping an Agent
+
+Beyond model and tools, an agent can be given its own skills, MCP servers, memory tier and reasoning depth — and an observer that watches it.
+
+```ts
+import { Claude, EFFORT_HIGH, PERMISSION_PLAN } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({
+  mcpServers: { linear: { type: 'http', url: 'https://mcp.linear.app/mcp' } },
+  agents: {
+    auditor: {
+      description: 'Audits a release against the checklist',
+      prompt: 'You are a release auditor.',
+      model: 'opus',
+      effort: EFFORT_HIGH,
+      permissionMode: PERMISSION_PLAN,
+      // only these skills, only this MCP server
+      skills: ['pdf'],
+      mcpServers: ['linear'],
+      // read project memory (CLAUDE.md) rather than the user tier
+      memory: 'project',
+      // seed the agent's first turn
+      initialPrompt: 'Start from the CHANGELOG.',
+      // a second agent watches this one
+      observer: 'reviewer',
+      observerMessage: 'Flag anything the auditor skipped.',
+    },
+  },
+})
+```
+
+`mcpServers` accepts either the name of a server already configured on the client, or an inline definition map. See [`AgentConfig`](../api/types#agentconfig) for the complete field list.
+
 ## Select an Agent
 
 Set a default agent for all queries:

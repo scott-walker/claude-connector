@@ -158,7 +158,7 @@ describe('parseStreamLine', () => {
 
     expect(event).toMatchObject({
       type: 'result',
-      subtype: 'error',
+      subtype: 'error_max_turns',
       isError: true,
       stopReason: 'max_turns',
       numTurns: 10,

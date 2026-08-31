@@ -35,9 +35,13 @@ const claude = new Claude({
 // Disable all tools (pure chat, no file access)
 const claude = new Claude({ tools: [] })
 
-// All built-in tools (default)
-const claude = new Claude({ tools: ['default'] })
+// All built-in tools
+const claude = new Claude({ tools: { type: 'preset', preset: 'claude_code' } })
 ```
+
+::: tip `['default']` still works
+`tools: ['default']` is the legacy CLI spelling of the preset and is translated to the object form. Before 0.7.0 it was forwarded to the SDK as a literal tool named `default`, which left Claude with **no** tools at all.
+:::
 
 ## `tools` vs `allowedTools` — The Difference
 
@@ -58,9 +62,63 @@ const claude = new Claude({
 Think of `tools` as "what exists" and `allowedTools` as "what's pre-approved." Use `tools` to limit Claude's capabilities, and `allowedTools` to streamline common operations.
 :::
 
+## Skills
+
+Skills are loaded through their own option — passing `'Skill'` in `allowedTools` is deprecated. SDK mode only.
+
+```ts
+// Named skills
+const claude = new Claude({ skills: ['pdf', 'docx'] })
+
+// Everything available
+const everything = new Claude({ skills: 'all' })
+```
+
+`disableSlashCommands: true` turns off every slash command, and therefore every skill. Reload skills from disk mid-session with [`reloadSkills()`](../api/#reloadskills).
+
+## Redirecting Tools
+
+`toolAliases` points a built-in tool at an MCP tool, which is useful when the host runs tools in its own sandbox or container. It is single-hop — an alias target is never itself re-aliased.
+
+```ts
+const claude = new Claude({
+  mcpServers: { workspace: { type: 'stdio', command: './workspace-server' } },
+  toolAliases: { Bash: 'mcp__workspace__bash' },
+})
+```
+
+## Sandboxing Tool Calls
+
+`sandbox` runs tool calls inside the OS sandbox with an egress allowlist, a filesystem policy, and credential masking.
+
+```ts
+const claude = new Claude({
+  sandbox: {
+    enabled: true,
+    // fail loudly rather than silently running unsandboxed
+    failIfUnavailable: true,
+    autoAllowBashIfSandboxed: true,
+    network: {
+      allowedDomains: ['registry.npmjs.org', 'github.com'],
+      strictAllowlist: true,
+    },
+    filesystem: {
+      allowWrite: ['/srv/workspace'],
+      denyRead: ['/etc/shadow', '~/.ssh'],
+    },
+  },
+})
+```
+
+See [`SandboxConfig`](../api/types#sandboxconfig) for the full option set.
+
+::: warning `failIfUnavailable`
+Without it, a platform with no available sandbox runs the tools unsandboxed rather than refusing. Set it whenever the sandbox is a safety requirement rather than a nicety.
+:::
+
 ## Permission Modes
 
-Six permission modes control how Claude handles tool approval:
+Seven permission modes control how Claude handles tool approval:
 
 ```ts
 import {
@@ -82,6 +140,7 @@ import {
 | `PERMISSION_AUTO` | `'auto'` | Automatic tool approval based on risk |
 | `PERMISSION_BYPASS` | `'bypassPermissions'` | Skip all permission checks |
 | `PERMISSION_DONT_ASK` | `'dontAsk'` | Skip all checks, don't even ask |
+| `PERMISSION_MANUAL` | `'manual'` | The `claude` binary's own spelling of `'default'`, normalized before it reaches the SDK |
 
 ```ts
 // Read-only — no modifications allowed

@@ -1,36 +1,137 @@
 import { Readable } from 'node:stream';
 import {
+  // Core conversation
   EVENT_TEXT,
   EVENT_TOOL_USE,
+  EVENT_TOOL_RESULT,
   EVENT_RESULT,
   EVENT_ERROR,
   EVENT_SYSTEM,
+  // Rate limits
   EVENT_RATE_LIMIT,
+  // Subagent tasks
   EVENT_TASK_STARTED,
   EVENT_TASK_PROGRESS,
   EVENT_TASK_NOTIFICATION,
+  EVENT_TASK_UPDATED,
+  EVENT_BACKGROUND_TASKS_CHANGED,
+  // Tool lifecycle
+  EVENT_TOOL_PROGRESS,
+  EVENT_TOOL_USE_SUMMARY,
+  // Auth status
+  EVENT_AUTH_STATUS,
+  // Hook lifecycle
+  EVENT_HOOK_STARTED,
+  EVENT_HOOK_PROGRESS,
+  EVENT_HOOK_RESPONSE,
+  // File persistence
+  EVENT_FILES_PERSISTED,
+  // Context compaction & usage
+  EVENT_COMPACT_BOUNDARY,
+  EVENT_CONTEXT_USAGE,
+  // Local command output
+  EVENT_LOCAL_COMMAND_OUTPUT,
+  // Extended thinking
+  EVENT_THINKING,
+  EVENT_THINKING_TOKENS,
+  // API retries & model refusals
+  EVENT_API_RETRY,
+  EVENT_MODEL_REFUSAL_FALLBACK,
+  EVENT_MODEL_REFUSAL_NO_FALLBACK,
+  // Session & worker lifecycle
+  EVENT_SESSION_STATE_CHANGED,
+  EVENT_STATUS,
+  EVENT_WORKER_SHUTTING_DOWN,
+  EVENT_CONVERSATION_RESET,
+  EVENT_MIRROR_ERROR,
+  EVENT_INIT,
+  // Permissions & notifications
+  EVENT_PERMISSION_DENIED,
+  EVENT_NOTIFICATION,
+  EVENT_INFORMATIONAL,
+  EVENT_PROMPT_SUGGESTION,
+  // Partial messages & memory
+  EVENT_PARTIAL_MESSAGE,
+  EVENT_MEMORY_RECALL,
+  // Commands, plugins & elicitation
+  EVENT_COMMANDS_CHANGED,
+  EVENT_PLUGIN_INSTALL,
+  EVENT_ELICITATION_COMPLETE,
+  EVENT_CONTROL_REQUEST_PROGRESS,
 } from '../constants.js';
 import type {
   StreamEvent,
+  // Core conversation
+  StreamTextEvent,
   StreamToolUseEvent,
+  StreamToolResultEvent,
   StreamResultEvent,
   StreamErrorEvent,
   StreamSystemEvent,
+  // Rate limits
   StreamRateLimitEvent,
+  // Subagent tasks
   StreamTaskStartedEvent,
   StreamTaskProgressEvent,
   StreamTaskNotificationEvent,
+  StreamTaskUpdatedEvent,
+  StreamBackgroundTasksChangedEvent,
+  // Tool lifecycle
+  StreamToolProgressEvent,
+  StreamToolUseSummaryEvent,
+  // Auth status
+  StreamAuthStatusEvent,
+  // Hook lifecycle
+  StreamHookStartedEvent,
+  StreamHookProgressEvent,
+  StreamHookResponseEvent,
+  // File persistence
+  StreamFilesPersistedEvent,
+  // Context compaction & usage
+  StreamCompactBoundaryEvent,
+  StreamContextUsageEvent,
+  // Local command output
+  StreamLocalCommandOutputEvent,
+  // Extended thinking
+  StreamThinkingEvent,
+  StreamThinkingTokensEvent,
+  // API retries & model refusals
+  StreamApiRetryEvent,
+  StreamModelRefusalFallbackEvent,
+  StreamModelRefusalNoFallbackEvent,
+  // Session & worker lifecycle
+  StreamSessionStateChangedEvent,
+  StreamStatusEvent,
+  StreamWorkerShuttingDownEvent,
+  StreamConversationResetEvent,
+  StreamMirrorErrorEvent,
+  StreamInitEvent,
+  // Permissions & notifications
+  StreamPermissionDeniedEvent,
+  StreamNotificationEvent,
+  StreamInformationalEvent,
+  StreamPromptSuggestionEvent,
+  // Partial messages & memory
+  StreamPartialMessageEvent,
+  StreamMemoryRecallEvent,
+  // Commands, plugins & elicitation
+  StreamCommandsChangedEvent,
+  StreamPluginInstallEvent,
+  StreamElicitationCompleteEvent,
+  StreamControlRequestProgressEvent,
 } from '../types/index.js';
 
-type TextCallback = (text: string) => void;
-type ToolUseCallback = (event: StreamToolUseEvent) => void;
-type ResultCallback = (event: StreamResultEvent) => void;
-type ErrorCallback = (event: StreamErrorEvent) => void;
-type SystemCallback = (event: StreamSystemEvent) => void;
-type TaskStartedCallback = (event: StreamTaskStartedEvent) => void;
-type TaskProgressCallback = (event: StreamTaskProgressEvent) => void;
-type TaskNotificationCallback = (event: StreamTaskNotificationEvent) => void;
-type RateLimitCallback = (event: StreamRateLimitEvent) => void;
+/** Callback for the `text` event — receives the chunk, not the event. */
+type TextCallback = (text: StreamTextEvent['text']) => void;
+
+/** Callback for any other event — receives the full event object. */
+type EventCallback<T> = (event: T) => void;
+
+/**
+ * Type-erased callback list. Element types are recovered by `listeners<T>()`,
+ * which is the only place a bucket is read or written with a concrete type.
+ */
+type ErasedCallback = (payload: never) => void;
 
 /**
  * A streaming response handle with fluent callback API and Node.js stream support.
@@ -42,6 +143,17 @@ type RateLimitCallback = (event: StreamRateLimitEvent) => void;
  *   .on('text', (text) => process.stdout.write(text))
  *   .on('tool_use', (event) => console.log(event.toolName))
  *   .on('task_started', (event) => console.log(`Task: ${event.description}`))
+ *   .done()
+ * ```
+ *
+ * Every variant of {@link StreamEvent} has an overload, so the callback
+ * parameter is narrowed to that variant — including the rarer ones:
+ *
+ * ```ts
+ * await claude.stream('Audit deps')
+ *   .on('thinking', (event) => log(event.thinking))
+ *   .on('context_usage', (event) => meter(event.contextUsage.percentage))
+ *   .on('api_retry', (event) => warn(`retry ${event.attempt}/${event.maxRetries}`))
  *   .done()
  * ```
  *
@@ -67,15 +179,9 @@ type RateLimitCallback = (event: StreamRateLimitEvent) => void;
  */
 export class StreamHandle implements AsyncIterable<StreamEvent> {
   private readonly source: () => AsyncIterable<StreamEvent>;
-  private readonly textCallbacks: TextCallback[] = [];
-  private readonly toolUseCallbacks: ToolUseCallback[] = [];
-  private readonly resultCallbacks: ResultCallback[] = [];
-  private readonly errorCallbacks: ErrorCallback[] = [];
-  private readonly systemCallbacks: SystemCallback[] = [];
-  private readonly taskStartedCallbacks: TaskStartedCallback[] = [];
-  private readonly taskProgressCallbacks: TaskProgressCallback[] = [];
-  private readonly taskNotificationCallbacks: TaskNotificationCallback[] = [];
-  private readonly rateLimitCallbacks: RateLimitCallback[] = [];
+
+  /** One callback list per event name, created on first registration. */
+  private readonly callbacks = new Map<string, ErasedCallback[]>();
 
   constructor(source: () => AsyncIterable<StreamEvent>) {
     this.source = source;
@@ -86,27 +192,66 @@ export class StreamHandle implements AsyncIterable<StreamEvent> {
    *
    * `text` callback receives just the string. All others receive the full event.
    */
+  // Core conversation
   on(type: typeof EVENT_TEXT, callback: TextCallback): this;
-  on(type: typeof EVENT_TOOL_USE, callback: ToolUseCallback): this;
-  on(type: typeof EVENT_RESULT, callback: ResultCallback): this;
-  on(type: typeof EVENT_ERROR, callback: ErrorCallback): this;
-  on(type: typeof EVENT_SYSTEM, callback: SystemCallback): this;
-  on(type: typeof EVENT_TASK_STARTED, callback: TaskStartedCallback): this;
-  on(type: typeof EVENT_TASK_PROGRESS, callback: TaskProgressCallback): this;
-  on(type: typeof EVENT_TASK_NOTIFICATION, callback: TaskNotificationCallback): this;
-  on(type: typeof EVENT_RATE_LIMIT, callback: RateLimitCallback): this;
+  on(type: typeof EVENT_TOOL_USE, callback: EventCallback<StreamToolUseEvent>): this;
+  on(type: typeof EVENT_TOOL_RESULT, callback: EventCallback<StreamToolResultEvent>): this;
+  on(type: typeof EVENT_RESULT, callback: EventCallback<StreamResultEvent>): this;
+  on(type: typeof EVENT_ERROR, callback: EventCallback<StreamErrorEvent>): this;
+  on(type: typeof EVENT_SYSTEM, callback: EventCallback<StreamSystemEvent>): this;
+  // Rate limits
+  on(type: typeof EVENT_RATE_LIMIT, callback: EventCallback<StreamRateLimitEvent>): this;
+  // Subagent tasks
+  on(type: typeof EVENT_TASK_STARTED, callback: EventCallback<StreamTaskStartedEvent>): this;
+  on(type: typeof EVENT_TASK_PROGRESS, callback: EventCallback<StreamTaskProgressEvent>): this;
+  on(type: typeof EVENT_TASK_NOTIFICATION, callback: EventCallback<StreamTaskNotificationEvent>): this;
+  on(type: typeof EVENT_TASK_UPDATED, callback: EventCallback<StreamTaskUpdatedEvent>): this;
+  on(type: typeof EVENT_BACKGROUND_TASKS_CHANGED, callback: EventCallback<StreamBackgroundTasksChangedEvent>): this;
+  // Tool lifecycle
+  on(type: typeof EVENT_TOOL_PROGRESS, callback: EventCallback<StreamToolProgressEvent>): this;
+  on(type: typeof EVENT_TOOL_USE_SUMMARY, callback: EventCallback<StreamToolUseSummaryEvent>): this;
+  // Auth status
+  on(type: typeof EVENT_AUTH_STATUS, callback: EventCallback<StreamAuthStatusEvent>): this;
+  // Hook lifecycle
+  on(type: typeof EVENT_HOOK_STARTED, callback: EventCallback<StreamHookStartedEvent>): this;
+  on(type: typeof EVENT_HOOK_PROGRESS, callback: EventCallback<StreamHookProgressEvent>): this;
+  on(type: typeof EVENT_HOOK_RESPONSE, callback: EventCallback<StreamHookResponseEvent>): this;
+  // File persistence
+  on(type: typeof EVENT_FILES_PERSISTED, callback: EventCallback<StreamFilesPersistedEvent>): this;
+  // Context compaction & usage
+  on(type: typeof EVENT_COMPACT_BOUNDARY, callback: EventCallback<StreamCompactBoundaryEvent>): this;
+  on(type: typeof EVENT_CONTEXT_USAGE, callback: EventCallback<StreamContextUsageEvent>): this;
+  // Local command output
+  on(type: typeof EVENT_LOCAL_COMMAND_OUTPUT, callback: EventCallback<StreamLocalCommandOutputEvent>): this;
+  // Extended thinking
+  on(type: typeof EVENT_THINKING, callback: EventCallback<StreamThinkingEvent>): this;
+  on(type: typeof EVENT_THINKING_TOKENS, callback: EventCallback<StreamThinkingTokensEvent>): this;
+  // API retries & model refusals
+  on(type: typeof EVENT_API_RETRY, callback: EventCallback<StreamApiRetryEvent>): this;
+  on(type: typeof EVENT_MODEL_REFUSAL_FALLBACK, callback: EventCallback<StreamModelRefusalFallbackEvent>): this;
+  on(type: typeof EVENT_MODEL_REFUSAL_NO_FALLBACK, callback: EventCallback<StreamModelRefusalNoFallbackEvent>): this;
+  // Session & worker lifecycle
+  on(type: typeof EVENT_SESSION_STATE_CHANGED, callback: EventCallback<StreamSessionStateChangedEvent>): this;
+  on(type: typeof EVENT_STATUS, callback: EventCallback<StreamStatusEvent>): this;
+  on(type: typeof EVENT_WORKER_SHUTTING_DOWN, callback: EventCallback<StreamWorkerShuttingDownEvent>): this;
+  on(type: typeof EVENT_CONVERSATION_RESET, callback: EventCallback<StreamConversationResetEvent>): this;
+  on(type: typeof EVENT_MIRROR_ERROR, callback: EventCallback<StreamMirrorErrorEvent>): this;
+  on(type: typeof EVENT_INIT, callback: EventCallback<StreamInitEvent>): this;
+  // Permissions & notifications
+  on(type: typeof EVENT_PERMISSION_DENIED, callback: EventCallback<StreamPermissionDeniedEvent>): this;
+  on(type: typeof EVENT_NOTIFICATION, callback: EventCallback<StreamNotificationEvent>): this;
+  on(type: typeof EVENT_INFORMATIONAL, callback: EventCallback<StreamInformationalEvent>): this;
+  on(type: typeof EVENT_PROMPT_SUGGESTION, callback: EventCallback<StreamPromptSuggestionEvent>): this;
+  // Partial messages & memory
+  on(type: typeof EVENT_PARTIAL_MESSAGE, callback: EventCallback<StreamPartialMessageEvent>): this;
+  on(type: typeof EVENT_MEMORY_RECALL, callback: EventCallback<StreamMemoryRecallEvent>): this;
+  // Commands, plugins & elicitation
+  on(type: typeof EVENT_COMMANDS_CHANGED, callback: EventCallback<StreamCommandsChangedEvent>): this;
+  on(type: typeof EVENT_PLUGIN_INSTALL, callback: EventCallback<StreamPluginInstallEvent>): this;
+  on(type: typeof EVENT_ELICITATION_COMPLETE, callback: EventCallback<StreamElicitationCompleteEvent>): this;
+  on(type: typeof EVENT_CONTROL_REQUEST_PROGRESS, callback: EventCallback<StreamControlRequestProgressEvent>): this;
   on(type: string, callback: (...args: never[]) => void): this {
-    switch (type) {
-      case EVENT_TEXT: this.textCallbacks.push(callback as TextCallback); break;
-      case EVENT_TOOL_USE: this.toolUseCallbacks.push(callback as ToolUseCallback); break;
-      case EVENT_RESULT: this.resultCallbacks.push(callback as ResultCallback); break;
-      case EVENT_ERROR: this.errorCallbacks.push(callback as ErrorCallback); break;
-      case EVENT_SYSTEM: this.systemCallbacks.push(callback as SystemCallback); break;
-      case EVENT_TASK_STARTED: this.taskStartedCallbacks.push(callback as TaskStartedCallback); break;
-      case EVENT_TASK_PROGRESS: this.taskProgressCallbacks.push(callback as TaskProgressCallback); break;
-      case EVENT_TASK_NOTIFICATION: this.taskNotificationCallbacks.push(callback as TaskNotificationCallback); break;
-      case EVENT_RATE_LIMIT: this.rateLimitCallbacks.push(callback as RateLimitCallback); break;
-    }
+    this.listeners<never>(type).push(callback as ErasedCallback);
     return this;
   }
 
@@ -149,7 +294,7 @@ export class StreamHandle implements AsyncIterable<StreamEvent> {
    * ```
    */
   async pipe(writable: { write(chunk: string): unknown }): Promise<StreamResultEvent> {
-    this.textCallbacks.push((text) => writable.write(text));
+    this.on(EVENT_TEXT, (text) => writable.write(text));
     return this.done();
   }
 
@@ -174,41 +319,32 @@ export class StreamHandle implements AsyncIterable<StreamEvent> {
     yield* this.source();
   }
 
-  private dispatch(event: StreamEvent): void {
-    const safeCall = <T>(callbacks: Array<(arg: T) => void>, arg: T) => {
-      for (const cb of callbacks) {
-        try { cb(arg); } catch { /* user callback error should not break the stream */ }
-      }
-    };
+  // ── Private ───────────────────────────────────────────────────────
 
-    switch (event.type) {
-      case EVENT_TEXT:
-        safeCall(this.textCallbacks, event.text);
-        break;
-      case EVENT_TOOL_USE:
-        safeCall(this.toolUseCallbacks, event);
-        break;
-      case EVENT_RESULT:
-        safeCall(this.resultCallbacks, event);
-        break;
-      case EVENT_ERROR:
-        safeCall(this.errorCallbacks, event);
-        break;
-      case EVENT_SYSTEM:
-        safeCall(this.systemCallbacks, event);
-        break;
-      case EVENT_TASK_STARTED:
-        safeCall(this.taskStartedCallbacks, event);
-        break;
-      case EVENT_TASK_PROGRESS:
-        safeCall(this.taskProgressCallbacks, event);
-        break;
-      case EVENT_TASK_NOTIFICATION:
-        safeCall(this.taskNotificationCallbacks, event);
-        break;
-      case EVENT_RATE_LIMIT:
-        safeCall(this.rateLimitCallbacks, event);
-        break;
+  /**
+   * Stable callback list for an event name, created on first access.
+   *
+   * The array identity never changes, so callers may hold on to it and splice
+   * themselves out by reference.
+   */
+  private listeners<T>(type: string): Array<(payload: T) => void> {
+    let list = this.callbacks.get(type);
+    if (!list) {
+      list = [];
+      this.callbacks.set(type, list);
+    }
+    return list as unknown as Array<(payload: T) => void>;
+  }
+
+  private dispatch(event: StreamEvent): void {
+    const list = this.callbacks.get(event.type);
+    if (!list || list.length === 0) return;
+
+    // `text` is the one event whose callbacks receive the payload, not the event.
+    const payload: unknown = event.type === EVENT_TEXT ? event.text : event;
+
+    for (const cb of list as unknown as Array<(payload: unknown) => void>) {
+      try { cb(payload); } catch { /* user callback error should not break the stream */ }
     }
   }
 }

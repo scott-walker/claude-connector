@@ -54,9 +54,21 @@ import { Claude } from '@scottwalker/kraube-konnektor'
 - [Subagent Control](#subagent-control)
 - [Settings & Plugins](#settings--plugins)
 - [Custom Process Spawn](#custom-process-spawn)
-- [Session Utilities](#session-utilities)
+- [Session Management](#session-management)
 - [Stderr Monitoring](#stderr-monitoring)
 - [Bypass Permissions](#bypass-permissions)
+- [Skills](#skills)
+- [Sandbox](#sandbox)
+- [Tool Aliases & Tool Config](#tool-aliases--tool-config)
+- [Task Budget](#task-budget)
+- [Plan Mode Instructions](#plan-mode-instructions)
+- [User Dialogs](#user-dialogs)
+- [Model Refusals](#model-refusals)
+- [Context Usage](#context-usage)
+- [Usage & Rate Limits](#usage--rate-limits)
+- [Session Store Mirroring](#session-store-mirroring)
+- [Settings Resolution](#settings-resolution)
+- [File Access Through the Session](#file-access-through-the-session)
 - [Advanced: Custom Executor](#advanced-custom-executor)
 
 ---
@@ -93,6 +105,21 @@ const claude = new Claude({
 const result = await claude.query('Find bugs in src/')
 console.log(result.text)
 ```
+
+### Choosing between them
+
+| | SDK mode (default) | CLI mode (`useSdk: false`) |
+|---|---|---|
+| Process | one persistent session | one process per query |
+| Latency | warm after `init()` | full start-up every query |
+| Per-query overrides | `model`, `permissionMode`, `thinking`, `effortLevel`, `fallbackModel`, `allowedTools`, `disallowedTools`, `additionalDirs`, `signal` | every `QueryOptions` field |
+| Extended `QueryResult` fields | populated | populated — the JSON path shares the stream's result mapping |
+| `result.messages` | always `[]` | populated from the CLI's JSON |
+| Exclusive to it | 26 control methods, `canUseTool`, `hookCallbacks`, `sandbox`, `skills`, `toolAliases`, `toolConfig`, `sessionStore`, `onUserDialog`, `spawnClaudeCodeProcess` | `mcpConfig`, `safeMode`, `bare`, `autocompact`, `replayUserMessages`, `brief`, `disableSlashCommands`, `worktree`, per-query isolation |
+| Concurrency | one session — concurrent queries interleave on it | independent processes run in parallel |
+
+Both modes produce the same 43 stream events, and the stored-session API
+(`rename` / `tag` / `fork` / `messages` / …) works in both.
 
 ---
 
@@ -266,7 +293,7 @@ chat.end()
 
 ```ts
 const duplex = claude.chat().toDuplex()
-inputStream.pipe(duplex).pipe(process.stdout)
+process.stdin.pipe(duplex).pipe(process.stdout)   // write prompts, read text back
 ```
 
 ### Chat as a Readable stream
@@ -357,8 +384,14 @@ const r2 = await session.query('Now fix the bugs you found')
 
 Run multiple independent queries concurrently.
 
+> **Pick the mode deliberately.** `parallel()` fires the queries at once. In CLI
+> mode each gets its own process, which is genuinely parallel. In SDK mode they
+> all run against the one persistent session and interleave on a single message
+> stream — use `useSdk: false`, or one `Claude` instance per branch, when the
+> queries must actually run side by side.
+
 ```ts
-const claude = new Claude()
+const claude = new Claude({ useSdk: false })
 
 const results = await claude.parallel([
   { prompt: 'Review src/auth.ts for security issues' },
@@ -586,16 +619,20 @@ Controls which tools **exist** — Claude cannot use tools outside this list.
 
 ```ts
 // Only allow reading — Claude cannot edit files at all
-const claude = new Claude({
+const readOnly = new Claude({
   tools: ['Read', 'Glob', 'Grep'],
 })
 
 // Disable all tools (pure chat, no file access)
-const claude = new Claude({ tools: [] })
+const noTools = new Claude({ tools: [] })
 
-// All built-in tools (default)
-const claude = new Claude({ tools: ['default'] })
+// Every built-in tool — the preset form (SDK mode; CLI mode has no spelling for it
+// and simply omits the flag, which is the same thing: no restriction)
+const everything = new Claude({ tools: { type: 'preset', preset: 'claude_code' } })
 ```
+
+`['default']` is the legacy spelling of the preset. SDK mode still translates it,
+but prefer the object form.
 
 ### `tools` vs `allowedTools` — the difference
 
@@ -737,19 +774,21 @@ const claude = new Claude({
 const claude = new Claude({
   mcpServers: {
     filesystem: {
-      type: 'stdio',
+      type: 'stdio',                       // `type` is optional — stdio is the default
       command: 'mcp-server-filesystem',
       args: ['--root', '/home/user/data'],
+      env: { DB_URL: 'postgres://localhost/mydb' },   // stdio servers take env…
+      timeout: 30_000,
     },
     github: {
       type: 'http',
       url: 'http://localhost:3000/mcp',
-      headers: { Authorization: 'Bearer token123' },
+      headers: { Authorization: 'Bearer token123' },  // …remote ones take headers
     },
     database: {
       type: 'sse',
       url: 'http://localhost:8080/sse',
-      env: { DB_URL: 'postgres://localhost/mydb' },
+      headers: { Authorization: 'Bearer token456' },
     },
   },
 })
@@ -927,32 +966,46 @@ const claude = new Claude({
 
 ## Abort
 
-Cancel a running query.
+Two granularities, and they are not interchangeable.
+
+### Per query — `signal` (preferred)
 
 ```ts
-const claude = new Claude()
-
-// Start a long query
-const promise = claude.query('Analyze the entire codebase')
-
-// Abort after 10 seconds
-setTimeout(() => claude.abort(), 10_000)
+const controller = new AbortController()
+setTimeout(() => controller.abort(), 10_000)
 
 try {
-  await promise
+  await claude.query('Analyze the entire codebase', { signal: controller.signal })
 } catch (err) {
-  console.log('Query was aborted')
+  // Both modes reject with the message 'Query aborted'
+  console.log((err as Error).message)
 }
 ```
 
-### Abort within a session
+In SDK mode this interrupts the turn and drains it to the result, so the session
+survives and the next query runs normally. In CLI mode it sends SIGTERM to that
+query's process.
+
+`stream()` never throws on abort — the remaining events, including the aborted
+`result`, are still yielded:
 
 ```ts
-const session = claude.session()
-const promise = session.query('Long analysis...')
+const signal = AbortSignal.timeout(10_000)
 
-setTimeout(() => session.abort(), 5_000)
+const result = await claude.stream('Long analysis…', { signal }).done()
+console.log(result.terminalReason)   // 'aborted_streaming' | 'aborted_tools'
 ```
+
+### Whole client — `abort()`
+
+```ts
+const promise = claude.query('Analyze the entire codebase')
+setTimeout(() => claude.abort(), 10_000)
+```
+
+`claude.abort()` closes the SDK session entirely (the next query re-initializes)
+or kills the active CLI process. `session.abort()` calls through to the same
+executor, so it has the same reach — it is not scoped to that session.
 
 ---
 
@@ -1031,7 +1084,25 @@ const claude = new Claude({
 
 ## Per-Query Overrides
 
-Any `ClientOptions` field that has a `QueryOptions` counterpart can be overridden per-query.
+Any `ClientOptions` field with a `QueryOptions` counterpart can be overridden
+per query — but **the two modes honour different subsets**, because the SDK
+session is created once and its options are fixed at construction.
+
+| | CLI mode (`useSdk: false`) | SDK mode (default) |
+|---|---|---|
+| How | argv is rebuilt for every query | eight overrides bridged over the control protocol |
+| Applied | every `QueryOptions` field | `model`, `permissionMode`, `thinking`, plus `effortLevel`, `fallbackModel`, `allowedTools`, `disallowedTools`, `additionalDirs` through `applyFlagSettings()` — set before the turn, restored after |
+| Special cases | — | `systemPrompt` is prepended to the prompt text; `signal` interrupts the turn |
+| Ignored | `skills`, `background` (no CLI spelling for either) | everything else — set it on the client instead |
+
+```ts
+// Honoured in both modes
+await claude.query('Deep analysis', {
+  model: 'opus',
+  permissionMode: PERMISSION_ACCEPT_EDITS,
+  thinking: { type: 'enabled', budgetTokens: 30_000 },
+})
+```
 
 ```ts
 import {
@@ -1053,7 +1124,7 @@ const claude = new Claude({
   tools: ['Read', 'Glob', 'Grep', 'Bash'],
 })
 
-// Override everything for one query
+// The full set — every field below is applied in CLI mode
 const result = await claude.query('Fix the critical bug NOW', {
   model: 'opus',
   maxTurns: 50,
@@ -1062,7 +1133,7 @@ const result = await claude.query('Fix the critical bug NOW', {
   effortLevel: EFFORT_MAX,
   systemPrompt: 'You are an emergency bug fixer. Act fast.',
   allowedTools: ['Read', 'Glob', 'Grep', 'Edit', 'Bash'],
-  tools: ['default'],
+  tools: ['Read', 'Glob', 'Grep', 'Edit', 'Bash'],
   cwd: '/home/user/production-hotfix',
   additionalDirs: ['/home/user/shared-config'],
   env: { HOTFIX: 'true' },
@@ -1142,12 +1213,92 @@ const result = await claude.query('Explain the auth module')
 
 result.text           // string — Claude's response
 result.sessionId      // string — session ID for resuming
-result.usage          // { inputTokens: number, outputTokens: number }
+result.usage          // TokenUsage — input/output plus cache tokens, in both modes
 result.cost           // number | null — USD cost
 result.durationMs     // number — wall-clock time
-result.messages       // Message[] — full conversation history
-result.structured     // unknown | null — parsed JSON when schema was used
-result.raw            // Record<string, unknown> — raw CLI JSON response
+result.messages       // Message[] — populated in CLI mode; always [] in SDK mode
+result.structured     // unknown | null — parsed JSON when a schema was used
+result.raw            // Record<string, unknown> — the raw result message
+```
+
+### Extended fields
+
+Both modes fill in everything the result message carries: `parseJsonResult()`
+runs the one-shot `--output-format json` payload through the same
+`parseResultEvent()` mapping the stream uses, so `claude -p` and the SDK session
+report the same 21-field shape. The raw payload stays in `raw` either way.
+
+```ts
+result.subtype            // 'success' | 'error_during_execution' | 'error_max_turns' | …
+result.isError            // boolean
+result.errors             // string[] — errors carried on the result
+result.terminalReason     // why the turn stopped — see below
+result.modelUsage         // per-model tokens, cost, context window
+result.permissionDenials  // tool calls that were denied
+result.deferredToolUse    // a tool call handed back to the caller
+result.durationApiMs      // time spent in API calls
+result.queuedTurnCount    // turns still queued behind this one
+result.ttftMs             // time to first token
+result.apiErrorStatus     // HTTP status of a failing API call
+result.fastModeState      // 'off' | 'cooldown' | 'on'
+result.origin             // what originated the turn (human, hook, coordinator, …)
+```
+
+### Terminal reasons
+
+`terminalReason` says why the turn stopped — the difference between "finished"
+and "ran out of budget" that `isError` alone cannot express. It is an open union,
+so handle the ones you care about and fall through on the rest.
+
+```ts
+switch (result.terminalReason) {
+  case 'completed':                 break
+  case 'max_turns':                 console.warn('raise maxTurns'); break
+  case 'budget_exhausted':          console.warn('raise maxBudget'); break
+  case 'prompt_too_long':           console.error('compact or trim the prompt'); break
+  case 'aborted_streaming':
+  case 'aborted_tools':             console.log('cancelled by the caller'); break
+  case 'stop_hook_prevented':
+  case 'hook_stopped':              console.warn('a Stop hook blocked continuation'); break
+  case 'tool_deferred':             console.log('run result.deferredToolUse yourself'); break
+  case 'model_error':
+  case 'api_error':                 console.error(`API ${result.apiErrorStatus}`); break
+  default:                          console.log(result.terminalReason)
+}
+```
+
+The full list is exported as `VALID_TERMINAL_REASONS`.
+
+### Per-model usage and cache accounting
+
+`usage` is the turn's total; `modelUsage` breaks it down per model — including
+the cache-token counts that dominate cost on long sessions.
+
+```ts
+const { inputTokens, outputTokens, cacheReadInputTokens = 0, cacheCreationInputTokens = 0 } = result.usage
+console.log(`in ${inputTokens} out ${outputTokens} cache ${cacheReadInputTokens}r/${cacheCreationInputTokens}w`)
+console.log(result.usage.serviceTier)                 // 'standard' | 'priority' | 'batch'
+console.log(result.usage.serverToolUse?.webSearchRequests)
+
+for (const [model, usage] of Object.entries(result.modelUsage ?? {})) {
+  console.log(
+    `${model}: $${usage.costUsd.toFixed(4)}`,
+    `(${usage.inputTokens}/${usage.outputTokens},`,
+    `cache ${usage.cacheReadInputTokens}r/${usage.cacheCreationInputTokens}w,`,
+    `window ${usage.contextWindow}, basis ${usage.costBasis ?? 'unknown'})`,
+  )
+}
+```
+
+### Permission denials
+
+Everything denied during the turn is aggregated on the result, so a batch job can
+report once instead of subscribing to `permission_denied` events.
+
+```ts
+for (const denial of result.permissionDenials ?? []) {
+  console.warn(`denied ${denial.toolName} (${denial.toolUseId})`, denial.toolInput)
+}
 ```
 
 ### Accessing message history
@@ -1190,47 +1341,130 @@ for (const msg of result.messages) {
 
 ## Stream Events
 
-Full reference for the discriminated union yielded by `stream()`.
+`stream()` yields a discriminated union of **43 variants** — both executors
+produce the same set. The complete table, with the option that gates each event,
+lives in [STREAMING.md](./STREAMING.md#stream-events-reference).
 
-| Type | Fields | Description |
-|------|--------|-------------|
-| `text` | `text` | Incremental text chunk |
-| `tool_use` | `toolName`, `toolInput` | Tool invocation |
-| `result` | `text`, `sessionId`, `usage`, `cost`, `durationMs` | Final result (always last) |
-| `error` | `message`, `code?` | Error during execution |
-| `system` | `subtype`, `data` | System/internal events |
+| Group | Events |
+|---|---|
+| Conversation | `text`, `thinking`, `thinking_tokens`, `tool_use`, `tool_result`, `tool_progress`, `tool_use_summary`, `result`, `error` |
+| Session lifecycle | `init`, `session_state_changed`, `status`, `compact_boundary`, `context_usage`, `conversation_reset`, `worker_shutting_down` |
+| Subagents & background | `task_started`, `task_progress`, `task_notification`, `task_updated`, `background_tasks_changed` |
+| Permissions & host UI | `permission_denied`, `notification`, `informational`, `prompt_suggestion`, `local_command_output` |
+| Hooks | `hook_started`, `hook_progress`, `hook_response` |
+| Reliability | `rate_limit`, `api_retry`, `model_refusal_fallback`, `model_refusal_no_fallback`, `mirror_error` |
+| Environment | `auth_status`, `files_persisted`, `memory_recall`, `commands_changed`, `plugin_install`, `elicitation_complete`, `control_request_progress` |
+| Escape hatches | `partial_message`, `system` |
+
+```ts
+import { Claude, EVENT_TEXT, EVENT_THINKING, EVENT_TOOL_RESULT } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude()
+
+for await (const event of claude.stream('Fix the failing test')) {
+  switch (event.type) {
+    case EVENT_TEXT:
+      process.stdout.write(event.text)
+      break
+    case EVENT_THINKING:
+      console.error(`[thinking] ${event.thinking.length} chars`)
+      break
+    case EVENT_TOOL_RESULT:
+      console.error(`[${event.toolUseId}] ${event.isError ? 'error' : 'ok'}`)
+      break
+  }
+}
+```
+
+Anything this version does not model arrives as `system` with its raw payload,
+so a newer CLI never breaks a consumer.
 
 ---
 
 ## Thinking Config
 
-Control Claude's extended thinking behavior.
+Control Claude's extended thinking behavior. It is one of the eight overrides
+SDK mode can apply per query: the executor switches the budget before the turn
+and restores it afterwards. `{ type: 'disabled' }` sets the budget to `0`;
+`null` is reserved for "clear the limit and let the model's default apply".
 
 ```ts
 // Adaptive thinking (Claude decides when to think deeply)
 const claude = new Claude({ thinking: { type: 'adaptive' } })
 
-// Per-query override with explicit budget
+// Fixed budget, and hide the blocks from the stream
+const quiet = new Claude({ thinking: { type: 'enabled', budgetTokens: 20_000, display: 'omitted' } })
+
+// Off entirely
+const off = new Claude({ thinking: { type: 'disabled' } })
+
+// Per-query override — works in both modes
 await claude.query('Complex analysis', {
-  thinking: { type: 'enabled', budgetTokens: 10000 },
+  thinking: { type: 'enabled', budgetTokens: 10_000 },
 })
+```
+
+Both modes support it: SDK mode passes `thinking` to the session, CLI mode emits
+`--thinking <type>` plus `--max-thinking-tokens`.
+
+### Reading thinking as it happens
+
+`thinking` carries the blocks; `thinking_tokens` is a running estimate emitted
+*between* them, which is what a progress indicator wants.
+
+```ts
+import { Claude, EVENT_THINKING, EVENT_THINKING_TOKENS, EVENT_TEXT } from '@scottwalker/kraube-konnektor'
+
+await claude.stream('Plan the migration')
+  .on(EVENT_THINKING_TOKENS, (event) => {
+    process.stderr.write(`\rthinking… ~${event.estimatedTokens} tokens (+${event.estimatedTokensDelta})`)
+  })
+  .on(EVENT_THINKING, (event) => {
+    // `redacted: true` means the provider withheld the reasoning; `thinking` is opaque data
+    console.error(event.redacted ? '\n[redacted]' : `\n[thinking] ${event.thinking}`)
+  })
+  .on(EVENT_TEXT, (text) => process.stdout.write(text))
+  .done()
+```
+
+Mid-session changes go through `setMaxThinkingTokens()`, which mirrors the SDK's
+own deprecated control method:
+
+```ts
+await claude.setMaxThinkingTokens(50_000, 'summarized')
+await claude.setMaxThinkingTokens(0)      // disable thinking
+await claude.setMaxThinkingTokens(null)   // clear the cap — model default applies
 ```
 
 ---
 
 ## Programmatic Permissions (canUseTool)
 
-Intercept tool calls at runtime and allow/deny them programmatically.
+Intercept tool calls at runtime and allow/deny them programmatically. SDK mode
+only — in CLI mode the equivalent is `permissionPromptToolName`, an MCP tool
+that answers prompts (it works in both modes).
 
 ```ts
 const claude = new Claude({
-  canUseTool: async (toolName, input, { signal }) => {
+  canUseTool: async (toolName, input, { signal, suggestions }) => {
     if (toolName === 'Bash' && String(input.command).includes('rm'))
       return { behavior: 'deny', message: 'Destructive commands blocked' }
-    return { behavior: 'allow' }
+
+    // 'ask' forces the interactive prompt; `updatedInput` rewrites the call
+    return { behavior: 'allow', updatedPermissions: suggestions }
   },
 })
+
+// CLI-mode counterpart
+const cli = new Claude({
+  useSdk: false,
+  mcpConfig: './mcp.json',
+  permissionPromptToolName: 'mcp__approvals__prompt',
+})
 ```
+
+Denied calls also surface as `permission_denied` stream events and on
+`result.permissionDenials`.
 
 ---
 
@@ -1246,7 +1480,11 @@ const server = await createSdkMcpServer({
   name: 'my-tools',
   tools: [
     await sdkTool('getPrice', 'Get stock price', { ticker: z.string() },
-      async ({ ticker }) => ({ content: [{ type: 'text', text: '142.50' }] })
+      // `args` is typed `unknown` — the schema is enforced at runtime
+      async (args) => {
+        const { ticker } = args as { ticker: string }
+        return { content: [{ type: 'text', text: `${ticker}: 142.50` }] }
+      }
     ),
   ],
 })
@@ -1258,7 +1496,11 @@ const claude = new Claude({ mcpServers: { prices: server } })
 
 ## JS Hook Callbacks
 
-Programmatic hooks that run JavaScript functions instead of shell commands. Supports 21 event types.
+Programmatic hooks that run JavaScript functions instead of shell commands.
+All **33** hook events are supported (`VALID_HOOK_EVENTS`), including the ones
+added in SDK 0.3.x: `PostToolBatch`, `UserPromptExpansion`, `StopFailure`,
+`PostCompact`, `PreModelSwitch`, `PostModelSwitch`, `PermissionDenied`,
+`TaskCreated`, `CwdChanged`, `FileChanged`, `DirectoryAdded`, `MessageDisplay`.
 
 ```ts
 const claude = new Claude({
@@ -1266,19 +1508,59 @@ const claude = new Claude({
     PreToolUse: [{
       matcher: 'Bash',
       hooks: [async (input) => {
-        console.log('About to run:', input.tool_input)
+        // A callback receives the whole HookInput union — narrow to get the payload
+        if (input.hook_event_name === 'PreToolUse') console.log('About to run:', input.tool_input)
         return { continue: true }
       }],
     }],
     SessionStart: [{
       hooks: [async (input) => {
-        console.log('Session started:', input.session_id)
+        console.log('Session started:', input.session_id)   // on every hook input
         return {}
       }],
     }],
   },
 })
 ```
+
+Inputs are `snake_case` (straight off the wire), outputs are `camelCase` (the
+protocol spells them that way). Narrow on `hook_event_name` to get the typed
+payload — one callback can then serve several events:
+
+```ts
+import { Claude, HOOK_PRE_TOOL_USE, HOOK_FILE_CHANGED, HOOK_PERMISSION_DENIED } from '@scottwalker/kraube-konnektor'
+import type { HookInput, HookJSONOutput } from '@scottwalker/kraube-konnektor'
+
+async function audit(input: HookInput): Promise<HookJSONOutput> {
+  switch (input.hook_event_name) {
+    case 'PreToolUse': {
+      const { command = '' } = input.tool_input as { command?: string }
+      return command.includes('sudo')
+        ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' } }
+        : { continue: true }
+    }
+    case 'FileChanged':
+      console.log('changed:', input.file_path)
+      return { continue: true }
+    case 'PermissionDenied':
+      console.warn('denied:', input.tool_name)
+      return { continue: true }
+    default:
+      return { continue: true }
+  }
+}
+
+const claude = new Claude({
+  hookCallbacks: {
+    [HOOK_PRE_TOOL_USE]: [{ matcher: 'Bash', hooks: [audit] }],
+    [HOOK_FILE_CHANGED]: [{ hooks: [audit] }],
+    [HOOK_PERMISSION_DENIED]: [{ hooks: [audit] }],
+  },
+})
+```
+
+Set `includeHookEvents: true` to also observe hooks from the *outside*, as
+`hook_started` / `hook_progress` / `hook_response` stream events.
 
 ---
 
@@ -1316,7 +1598,11 @@ await claude.toggleMcpServer('github', false)
 
 ## File Checkpointing
 
-Track and revert file changes made during a session.
+Track and revert file changes made during a session. SDK mode only.
+
+`rewindFiles()` takes the uuid of the **user message** to restore to — not a
+session id. Capture it from the stream (`partial_message` carries
+`userMessageUuid`), or from your own record of the turn.
 
 ```ts
 const claude = new Claude({ enableFileCheckpointing: true })
@@ -1324,26 +1610,68 @@ const claude = new Claude({ enableFileCheckpointing: true })
 await claude.query('Refactor auth.ts')
 
 // Preview what would be reverted
-const result = await claude.rewindFiles('msg-uuid-123', { dryRun: true })
-// result: { canRewind: true, filesChanged: ['auth.ts'], insertions: 5, deletions: 2 }
+const preview = await claude.rewindFiles('msg-uuid-123', { dryRun: true })
+// { canRewind: true, filesChanged: ['auth.ts'], insertions: 5, deletions: 2 }
 
 // Actually revert the changes
-await claude.rewindFiles('msg-uuid-123')
+if (preview.canRewind) {
+  const done = await claude.rewindFiles('msg-uuid-123')
+  // `skippedLinks` counts tracked files left alone because of a symlink,
+  // hard link or unsafe parent — only reported on a real rewind
+  console.log(done.filesChanged, done.skippedLinks ?? 0)
+}
 ```
+
+The transcript-side half is `resumeSessionAt`, which resumes only up to a given
+message uuid — rewind the files, resume the transcript, and the session is back
+where it was.
 
 ---
 
 ## Account & Model Info
 
-Query account details, available models, agents, and MCP server status.
+Query account details, available models, agents, and MCP server status. All of
+these are SDK-mode control methods.
 
 ```ts
 const claude = new Claude()
+await claude.init()
 
 const account = await claude.accountInfo()
-const models = await claude.supportedModels()
-const agents = await claude.supportedAgents()
-const mcpStatus = await claude.mcpServerStatus()
+console.log(account.email, account.subscriptionType, account.apiProvider)
+
+for (const model of await claude.supportedModels()) {
+  console.log(model.value, model.displayName, model.supportedEffortLevels ?? [])
+}
+
+for (const agent of await claude.supportedAgents()) console.log(agent.name, agent.model)
+for (const server of await claude.mcpServerStatus()) console.log(server.name, server.status)
+for (const command of await claude.supportedCommands()) console.log(`/${command.name}`, command.argumentHint)
+```
+
+### What the session loaded at start-up
+
+`initializationResult()` answers it from the value cached during warm-up — no
+round trip. `reinitialize()` re-requests it (and redelivers pending
+`canUseTool` / `onUserDialog` requests after a transport gap).
+
+```ts
+const init = await claude.initializationResult()
+console.log(init.outputStyle, init.availableOutputStyles)
+console.log(`${init.commands.length} commands, ${init.agents.length} agents`)
+console.log(init.hooksApplied, init.fastModeState)
+
+const refreshed = await claude.reinitialize()
+```
+
+### Reload plugins and skills from disk
+
+```ts
+const plugins = await claude.reloadPlugins()
+console.log(`${plugins.plugins.length} plugins, ${plugins.errorCount} errors`)
+
+const skills = await claude.reloadSkills()
+console.log(skills.skills.map((skill) => skill.name))
 ```
 
 ---
@@ -1363,20 +1691,56 @@ const result = await claude.query('Long task', { signal: controller.signal })
 
 ## Subagent Control
 
-Monitor and control subagent (spawned task) lifecycle via stream events.
+Five events track the subagent lifecycle. `task_updated` carries a **patch** to
+apply over the task you are holding; `background_tasks_changed` carries the full
+set (replace yours with it).
 
 ```ts
+import {
+  Claude,
+  EVENT_TASK_STARTED, EVENT_TASK_PROGRESS, EVENT_TASK_NOTIFICATION,
+  EVENT_TASK_UPDATED, EVENT_BACKGROUND_TASKS_CHANGED,
+} from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ agentProgressSummaries: true, perTaskStopAffordance: true })
+
 await claude.stream('Analyze and fix')
-  .on('task_started', (e) => console.log(`Subagent started: ${e.description}`))
-  .on('task_progress', (e) => console.log(`Progress: ${e.description}`))
-  .on('task_notification', (e) => {
-    if (e.status === 'completed') console.log(`Done: ${e.summary}`)
-    if (e.status === 'failed') console.error(`Failed: ${e.summary}`)
+  .on(EVENT_TASK_STARTED, (event) => {
+    console.log(`started ${event.taskId} (${event.subagentType ?? 'task'}): ${event.description}`)
+    // Cancel a subagent that overruns
+    setTimeout(() => void claude.stopTask(event.taskId), 120_000)
+  })
+  .on(EVENT_TASK_PROGRESS, (event) => {
+    console.log(`  ${event.summary ?? event.description} — ${event.usage.totalTokens} tokens`)
+  })
+  .on(EVENT_TASK_UPDATED, (event) => console.log(`  patch ${event.taskId}:`, event.patch))
+  .on(EVENT_TASK_NOTIFICATION, (event) => {
+    if (event.status === 'completed') console.log(`done: ${event.summary}`)
+    else console.error(`${event.status}: ${event.summary}`)
+  })
+  .on(EVENT_BACKGROUND_TASKS_CHANGED, (event) => {
+    console.log('background:', event.tasks.map((task) => task.taskId))
   })
   .done()
+```
 
-// Stop a running subagent by ID
-await claude.stopTask('task-42')
+`perTaskStopAffordance: true` declares that the host wires a per-task stop
+control — without it a stop request interrupts the whole turn instead of one
+task.
+
+### Read a subagent's transcript afterwards
+
+The live events say what happened; `subagents()` / `subagentMessages()` read it
+back from the stored transcript.
+
+```ts
+const session = claude.session()
+await session.query('Audit every module with subagents')
+
+for (const agentId of await session.subagents()) {
+  const transcript = await session.subagentMessages(agentId)
+  console.log(agentId, transcript.length, 'messages')
+}
 ```
 
 ---
@@ -1409,16 +1773,83 @@ const claude = new Claude({
 
 ---
 
-## Session Utilities
+## Session Management
 
-List and inspect sessions programmatically.
+Stored transcripts can be listed, read, renamed, tagged, forked and deleted.
+Two equivalent surfaces:
+
+- **free functions** — for any session id, no client needed
+- **`Session` methods** — for the session an instance is already holding, with
+  the project directory defaulting to the client's `cwd`
+
+Both work in **SDK and CLI mode**: they read and write the transcript rather
+than talking to a running process.
+
+### Free functions
 
 ```ts
-import { listSessions, getSessionMessages } from '@scottwalker/kraube-konnektor'
+import {
+  listSessions, getSessionInfo, getSessionMessages,
+  listSubagents, getSubagentMessages,
+  forkSession, renameSession, tagSession, deleteSession,
+} from '@scottwalker/kraube-konnektor'
 
-const sessions = await listSessions({ dir: '/my/project' })
-const messages = await getSessionMessages(sessions[0].sessionId)
+// Newest first; `includeProgrammatic: false` hides headless runs, matching /resume
+const sessions = await listSessions({ dir: process.cwd(), limit: 20, includeProgrammatic: false })
+
+const target = sessions[0]
+if (target) {
+  const info = await getSessionInfo(target.sessionId, { dir: process.cwd() })
+  console.log(info?.customTitle ?? info?.summary, info?.gitBranch, info?.tag)
+
+  // `parent_tool_use_id` / `parent_agent_id` rebuild the subagent tree from the flat list
+  const messages = await getSessionMessages(target.sessionId, { limit: 100, includeSystemMessages: true })
+  console.log(messages.filter((message) => message.parent_agent_id === null).length, 'top-level')
+
+  for (const agentId of await listSubagents(target.sessionId)) {
+    console.log(agentId, (await getSubagentMessages(target.sessionId, agentId)).length)
+  }
+
+  await renameSession(target.sessionId, 'Auth refactor')
+  await tagSession(target.sessionId, 'release-audit')
+  await tagSession(target.sessionId, null)     // `null` clears — not "leave unchanged"
+
+  const { sessionId } = await forkSession(target.sessionId, { title: 'What-if branch' })
+  await deleteSession(sessionId)
+}
 ```
+
+Omitting `dir` searches every project directory — location-independent but
+slower. Pass the session's `cwd` when you know it.
+
+### Session methods
+
+```ts
+const claude = new Claude({ useSdk: false })
+const session = claude.session()
+
+await session.query('Audit src/')
+await session.rename('src audit')
+await session.tag('release-blockers')
+
+const info = await session.info()
+const messages = await session.messages({ limit: 50 })
+
+// Branch without touching the original — the fork is usable immediately
+const branch = await session.fork({ title: 'alternative plan' })
+await branch.query('Try the other approach instead')
+
+await session.delete()   // instance stays usable; the next query starts fresh
+```
+
+`session.fork()` copies the transcript into a new session **now**;
+`claude.session({ resume, fork: true })` is the `--fork-session` flag, which
+branches on the *next* turn. Forks start without undo history — file-history
+snapshots are not copied.
+
+Every stored-session method needs an id, so call them after the first query, or
+create the session with `{ resume }` / `{ sessionId }`. Without one they throw a
+`ValidationError`.
 
 ---
 
@@ -1443,6 +1874,369 @@ const claude = new Claude({
   permissionMode: 'bypassPermissions',
   allowDangerouslySkipPermissions: true,
 })
+```
+
+---
+
+## Skills
+
+Skills are loaded by name (or all at once). This is the only supported way to
+enable them — passing `'Skill'` in `allowedTools` is deprecated.
+
+```ts
+const claude = new Claude({ skills: ['pdf', 'docx'] })
+
+// Everything the settings cascade discovers
+const all = new Claude({ skills: 'all' })
+```
+
+SDK mode only. The CLI-side counterpart is the negative one:
+`disableSlashCommands: true` turns off every slash command *and* every skill.
+
+Skills are reported as `SlashCommand` entries — on the `init` event, and from
+`reloadSkills()` after they change on disk:
+
+```ts
+import { Claude, EVENT_INIT } from '@scottwalker/kraube-konnektor'
+
+await claude.stream('List what you can do')
+  .on(EVENT_INIT, (event) => console.log('skills:', event.skills))
+  .done()
+
+const { skills } = await claude.reloadSkills()
+for (const skill of skills) console.log(skill.name, '—', skill.description)
+```
+
+---
+
+## Sandbox
+
+Run tool calls under OS-level isolation: an egress allowlist, filesystem rules,
+and credential masking so secrets never reach the model.
+
+```ts
+const claude = new Claude({
+  sandbox: {
+    enabled: true,
+    failIfUnavailable: true,        // refuse to run unsandboxed
+    autoAllowBashIfSandboxed: true, // Bash needs no prompt inside the sandbox
+
+    network: {
+      allowedDomains: ['registry.npmjs.org', 'api.github.com'],
+      strictAllowlist: true,
+      allowLocalBinding: true,
+    },
+
+    filesystem: {
+      allowWrite: ['./build', './.cache'],
+      denyRead: ['~/.ssh', '~/.aws'],
+    },
+
+    credentials: {
+      // The token is masked in the model's view and injected only for these hosts
+      envVars: [{ name: 'GITHUB_TOKEN', mode: 'mask', injectHosts: ['api.github.com'] }],
+      files: [{ path: '~/.npmrc', mode: 'deny' }],
+    },
+  },
+})
+```
+
+SDK mode only. `excludedCommands`, `ignoreViolations`, `bwrapPath` and the
+`sigv4` / `awsPairs` credential helpers are available on the same object — see
+`SandboxConfig` in `src/types/client.ts`.
+
+---
+
+## Tool Aliases & Tool Config
+
+`toolAliases` redirects a built-in tool to an MCP tool — useful when the host
+runs commands in its own container and wants Claude's `Bash` to land there. It is
+single-hop: an alias target is never itself re-aliased.
+
+```ts
+const claude = new Claude({
+  mcpServers: { workspace: { command: 'node', args: ['./workspace-mcp.js'] } },
+  toolAliases: {
+    Bash: 'mcp__workspace__bash',
+    Read: 'mcp__workspace__read',
+  },
+})
+```
+
+`toolConfig` tunes behaviour the CLI otherwise hardcodes:
+
+```ts
+// Render AskUserQuestion previews as HTML fragments instead of Markdown
+const web = new Claude({ toolConfig: { askUserQuestion: { previewFormat: 'html' } } })
+```
+
+Both are SDK mode only.
+
+---
+
+## Task Budget
+
+`maxBudget` caps spend in USD and is enforced. `taskBudgetTokens` is different:
+it is a token allowance the model is *told about*, so it can pace its tool use
+and wrap up before hitting the limit.
+
+```ts
+const claude = new Claude({
+  taskBudgetTokens: 200_000,   // "you have this much to work with"
+  maxBudget: 5.0,              // hard stop at $5
+})
+
+// Per query, in both modes
+await claude.query('Survey the repo, then summarize', { taskBudgetTokens: 50_000 })
+```
+
+Both must be positive integers (`maxBudget` a positive number) or the client
+throws a `ValidationError` at construction.
+
+When a budget ends the turn, `result.terminalReason` is `'budget_exhausted'` and
+`result.subtype` is `'error_max_budget_usd'`.
+
+---
+
+## Plan Mode Instructions
+
+`permissionMode: 'plan'` runs the built-in plan workflow. `planModeInstructions`
+replaces its body, so a host can define what "planning" means for its domain.
+
+```ts
+import { Claude, PERMISSION_PLAN } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({
+  permissionMode: PERMISSION_PLAN,
+  planModeInstructions: [
+    'Produce a numbered migration plan.',
+    'Every step must name the files it touches and its rollback.',
+    'Do not modify anything until the plan is approved.',
+  ].join('\n'),
+})
+
+const plan = await claude.query('Move auth to the new session store')
+```
+
+Honoured in both modes at client level (`--plan-mode-instructions` in CLI
+mode), and only while the permission mode is `'plan'`. A per-query value reaches
+CLI mode only — the SDK has no mid-session control request for it.
+
+---
+
+## User Dialogs
+
+Some CLI decisions need a human. `onUserDialog` lets the host render them; without
+a handler the CLI fails closed and applies the dialog's default.
+
+```ts
+const claude = new Claude({
+  supportedDialogKinds: ['refusal_fallback_prompt'],
+  onUserDialog: async (request, { signal, requestId }) => {
+    // `dialogKind` is an open union — cancel anything you do not recognise
+    if (request.dialogKind !== 'refusal_fallback_prompt') return { behavior: 'cancelled' }
+
+    const answer = await ui.ask(request.payload, { signal })
+    return { behavior: 'completed', result: answer }
+  },
+})
+```
+
+Declaring a kind is what makes the CLI send it, so `supportedDialogKinds`
+requires `onUserDialog` — the client throws a `ValidationError` otherwise.
+
+Return `null` **only** when the answer was already sent out of band echoing
+`requestId`; otherwise the dialog stays parked until the worker's deadline. The
+same contract applies to `onElicitation`.
+
+---
+
+## Model Refusals
+
+When a model refuses, the CLI either falls back to another model or gives up.
+Both outcomes are events, not exceptions — and a fallback can **retract** content
+you already streamed.
+
+```ts
+import {
+  Claude, EVENT_MODEL_REFUSAL_FALLBACK, EVENT_MODEL_REFUSAL_NO_FALLBACK,
+} from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ model: 'opus', fallbackModel: ['sonnet', 'haiku'] })
+const transcript = new Map<string, string>()
+
+await claude.stream('Summarize the incident report')
+  .on(EVENT_MODEL_REFUSAL_FALLBACK, (event) => {
+    console.warn(`${event.originalModel} → ${event.fallbackModel} (${event.direction})`)
+    // Drop what the CLI withdrew, or you will show content it has retracted
+    for (const uuid of event.retractedMessageUuids ?? []) transcript.delete(uuid)
+  })
+  .on(EVENT_MODEL_REFUSAL_NO_FALLBACK, (event) => {
+    console.error(`refused (${event.refusalCategory ?? 'unknown'}): ${event.refusalExplanation ?? ''}`)
+  })
+  .done()
+```
+
+`direction` is `'retry'` (switching to the fallback), `'revert'` (switching back)
+or `'sticky'` (staying on the fallback); `scope` says whether the switch is
+`'session'`- or `'local'`-wide.
+
+---
+
+## Context Usage
+
+`getContextUsage()` is the structured form of `/context` — what is filling the
+window right now.
+
+```ts
+const usage = await claude.getContextUsage()
+
+console.log(`${usage.percentage}% of ${usage.rawMaxTokens} on ${usage.model}`)
+if (usage.overLimit) console.warn(`over by ${usage.overLimit.tokensOver} tokens`)
+
+for (const category of usage.categories) {
+  console.log(`${category.name.padEnd(24)} ${category.tokens}`, category.kind ?? '')
+}
+
+console.log('MCP tools:', usage.mcpTools?.length ?? 0)
+console.log('memory files:', usage.memoryFiles?.length ?? 0)
+console.log('auto-compact at:', usage.autoCompactThreshold, usage.isAutoCompactEnabled)
+```
+
+The same payload arrives on the stream as `context_usage` whenever an assistant
+message carries it — see
+[STREAMING.md](./STREAMING.md#context-pressure) for the watching pattern, and
+`compact_boundary` for when compaction actually fires.
+
+---
+
+## Usage & Rate Limits
+
+`usage()` is the structured form of `/usage`: session totals plus plan
+utilization.
+
+```ts
+const report = await claude.usage()
+
+console.log(report.session.totalCostUsd, report.subscriptionType)
+
+if (report.rateLimitsAvailable) {
+  const { fiveHour, sevenDay, sevenDayOpus } = report.rateLimits ?? {}
+  console.log('5h  ', fiveHour?.utilization, 'resets', fiveHour?.resetsAt)
+  console.log('7d  ', sevenDay?.utilization)
+  console.log('opus', sevenDayOpus?.utilization)
+}
+
+console.log('requests today:', report.behaviors?.day.requestCount)
+console.log('top skills:', report.behaviors?.week.skills.map((entry) => entry.name))
+```
+
+Marked experimental by the SDK — the wrapper keeps a stable name, but the payload
+may still change. Live quota pressure also arrives as `rate_limit` events.
+
+---
+
+## Session Store Mirroring
+
+`sessionStore` mirrors the transcript into your own storage. The subprocess still
+writes locally; the adapter receives a copy **after** the local write succeeds —
+which is why it cannot be combined with `noSessionPersistence`.
+
+```ts
+import { Claude, loadSessionStoreHelpers, type SessionStore } from '@scottwalker/kraube-konnektor'
+
+const { foldSessionSummary } = await loadSessionStoreHelpers()
+
+const store: SessionStore = {
+  // `uuid` is the idempotency key — retries and imports replay batches
+  async append(key, entries) {
+    const previous = await db.readSummary(key)
+    const summary = foldSessionSummary(previous, key, entries, { mtime: Date.now() })
+    await db.write(key, entries, summary)
+  },
+  async load(key) {
+    return (await db.read(key)) ?? null
+  },
+  async listSessions(projectKey) {
+    return db.listSessions(projectKey)      // { sessionId, mtime } — mtime in epoch ms
+  },
+  async delete(key) {
+    await db.delete(key)                    // omit entirely for WORM backends
+  },
+}
+
+const claude = new Claude({ sessionStore: store, sessionStoreFlush: 'batched' })
+```
+
+`'batched'` (default) writes once per turn; `'eager'` writes per message, so
+`append()` must stay cheap. A batch that fails all its retries is dropped and
+surfaces as a `mirror_error` stream event — the run itself continues.
+
+For tests, the SDK's in-memory store is one call away:
+
+```ts
+import { createInMemorySessionStore, importSessionToStore } from '@scottwalker/kraube-konnektor'
+
+const store = await createInMemorySessionStore()
+await importSessionToStore(existingSessionId, store, { dir: process.cwd() })
+console.log(store.size)
+store.clear()
+```
+
+The session-management functions accept the same store, so
+`listSessions({ sessionStore: store })` and friends read from it instead of the
+filesystem.
+
+---
+
+## Settings Resolution
+
+Work out what settings a query *would* see, without spawning anything.
+
+```ts
+import { resolveSettings, loadSettingsHelpers } from '@scottwalker/kraube-konnektor'
+
+const resolved = await resolveSettings({ cwd: process.cwd() })
+console.log(resolved.provenance.model?.source)   // 'user' | 'project' | 'managed' | …
+
+// resolveSettings() reports the RAW cascade, including escalating modes the CLI
+// would refuse to honour from a repo-committed tier. Filter before acting.
+const { filterEscalatingDefaultMode } = await loadSettingsHelpers()
+const trusted = filterEscalatingDefaultMode(resolved)
+console.log(trusted.permissions?.defaultMode)
+```
+
+The policy tier matches CLI start-up (managed settings, remote cache, MDM,
+`managedSettings`) except that the admin-configured `policyHelper` subprocess is
+not executed.
+
+`applyFlagSettings()` is the live counterpart — it writes into the same
+highest-priority flag layer, mid-session, without touching any file:
+
+```ts
+await claude.applyFlagSettings({ effortLevel: 'high' })
+await claude.applyFlagSettings({ effortLevel: null })   // clear; next tier wins
+```
+
+---
+
+## File Access Through the Session
+
+Two control methods let a host cooperate with the session's file state instead of
+working around it.
+
+```ts
+import { statSync } from 'node:fs'
+
+// Read under the session's permission rules — returns null on denial or missing
+const file = await claude.readFile('src/secret.ts', { maxBytes: 1_000_000 })
+if (file) console.log(file.absPath, file.contents.length, file.truncated ?? false)
+
+const image = await claude.readFile('docs/diagram.png', { encoding: 'base64' })
+
+// Tell the session a file is already known, so Edit passes the read-before-edit
+// guard for a file the host read itself
+await claude.seedReadState('src/index.ts', statSync('src/index.ts').mtimeMs)
 ```
 
 ---

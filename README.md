@@ -10,7 +10,7 @@ Programmatic Node.js interface for [Claude Code](https://docs.anthropic.com/en/d
 
 Use Claude Code from your application code — no terminal required. Works with your existing Max/Team/Enterprise subscription.
 
-**[Website](https://scott-walker.github.io/kraube-konnektor/)** | **[Examples](./docs/EXAMPLES.md)** | **[API Reference](./docs/API.md)** | **[Architecture](./docs/ARCHITECTURE.md)**
+**[Website](https://scott-walker.github.io/kraube-konnektor/)** | **[Examples](./docs/EXAMPLES.md)** | **[API Reference](./docs/API.md)** | **[Streaming](./docs/STREAMING.md)** | **[Architecture](./docs/ARCHITECTURE.md)**
 
 ---
 
@@ -23,13 +23,32 @@ Claude Code is a powerful AI coding agent, but it only runs in a terminal. **kra
 - **CLI wrapper, not API client** — uses your local `claude` binary and subscription, not the Anthropic HTTP API
 - **Two execution modes** — persistent SDK session (fast, default) or CLI process spawning (simple)
 - **Executor abstraction** — swap CLI for SDK or HTTP backend without changing your code
-- **Full CLI parity** — exposes all 45+ Claude Code flags through typed options
+- **Full parity** — 82 client options, 27 per-query options, 60 CLI flags, 33 hook events, 43 stream events, 26 live control methods
 - **Typed handles** — `StreamHandle` (fluent `.on().done()` + `for-await`) and `ChatHandle` (multi-turn conversations)
+
+## What's new in 0.7
+
+Built on `@anthropic-ai/claude-agent-sdk` **0.3.x**. Highlights, with the details
+in the docs:
+
+| Capability | Where |
+|---|---|
+| Skills, sandbox, tool aliases, per-tool config | [Examples](./docs/EXAMPLES.md#skills) |
+| 13 more control methods — context usage, usage report, plugin/skill reload, file reads, background tasks | [API](./docs/API.md#control-methods-sdk-mode-only) |
+| Session management — fork, rename, tag, delete, read transcripts and subagents | [API](./docs/API.md#session-management) |
+| 43 stream events, including thinking, refusals, retries, context pressure | [Streaming](./docs/STREAMING.md#stream-events-reference) |
+| Richer results — terminal reasons, per-model usage, cache tokens, permission denials | [Examples](./docs/EXAMPLES.md#queryresult-fields) |
+| 33 hook events, session-store mirroring, host dialogs, plan-mode instructions | [Examples](./docs/EXAMPLES.md#js-hook-callbacks) |
+
+`thinking`, `betas`, `debug` and `includePartialMessages` are no longer SDK-only —
+they have CLI flags now. The [option tables](./docs/API.md#clientoptions) mark
+every option `both` / `SDK` / `CLI`.
 
 ## Requirements
 
 - **Node.js** >= 18.0.0
 - **Claude Code CLI** installed and authenticated
+- **`@anthropic-ai/claude-agent-sdk`** ^0.3.251 — a dependency, installed for you
 
 ## Install
 
@@ -107,16 +126,17 @@ Real-time output as Claude works. `stream()` returns a `StreamHandle` — use th
 ```typescript
 import {
   Claude,
-  EVENT_TEXT, EVENT_TOOL_USE, EVENT_RESULT, EVENT_ERROR,
+  EVENT_TEXT, EVENT_TOOL_USE, EVENT_THINKING, EVENT_RESULT, EVENT_ERROR,
 } from '@scottwalker/kraube-konnektor'
 
 const claude = new Claude()
 
-// Fluent API (.on / .done)
+// Fluent API (.on / .done) — one overload per event, 43 in total
 const result = await claude
   .stream('Rewrite the auth module')
-  .on(EVENT_TEXT, (e) => process.stdout.write(e.text))
+  .on(EVENT_TEXT, (text) => process.stdout.write(text))   // `text` gets the chunk itself
   .on(EVENT_TOOL_USE, (e) => console.log(`[Tool] ${e.toolName}`))
+  .on(EVENT_THINKING, (e) => console.error(`[thinking] ${e.thinking.length} chars`))
   .on(EVENT_ERROR, (e) => console.error(e.message))
   .done()
 
@@ -143,6 +163,8 @@ for await (const event of handle) {
 }
 ```
 
+All 43 event variants are listed in [docs/STREAMING.md](./docs/STREAMING.md#stream-events-reference).
+
 ### Multi-turn Sessions
 
 Maintain conversation context across queries:
@@ -162,6 +184,12 @@ await s2.query('Continue where we left off')
 
 // Fork a session (branch without modifying the original)
 const s3 = claude.session({ resume: session.sessionId!, fork: true })
+
+// Manage the stored transcript — works in both modes
+await session.rename('architecture audit')
+await session.tag('q3-review')
+const branch = await session.fork({ title: 'alternative plan' })
+const history = await session.messages({ limit: 50 })
 ```
 
 ### Structured Output
@@ -196,12 +224,12 @@ console.log(result.structured)
 
 ### Parallel Execution
 
-Run independent queries concurrently (each spawns a separate CLI process):
+Run independent queries concurrently. In CLI mode each spawns its own process; in SDK mode they interleave on the one persistent session, so use `useSdk: false` when they must truly run side by side:
 
 ```typescript
 import { Claude, PERMISSION_PLAN } from '@scottwalker/kraube-konnektor'
 
-const claude = new Claude()
+const claude = new Claude({ useSdk: false })
 
 const [bugs, tests, docs] = await claude.parallel([
   { prompt: 'Find bugs in src/', options: { cwd: './src' } },
@@ -366,9 +394,10 @@ const server = await createSdkMcpServer({
   name: 'my-tools',
   tools: [
     await sdkTool('getUser', 'Get user by ID', { id: z.string() },
-      async ({ id }) => ({
-        content: [{ type: 'text', text: JSON.stringify({ name: 'Alice', role: 'admin' }) }],
-      })
+      async (args) => {
+        const { id } = args as { id: string }   // schema is enforced at runtime
+        return { content: [{ type: 'text', text: JSON.stringify({ id, role: 'admin' }) }] }
+      }
     ),
   ],
 })
@@ -377,7 +406,7 @@ const claude = new Claude({ mcpServers: { myTools: server } })
 
 ### JS Hook Callbacks
 
-Subscribe to all 21 hook events with native JS callbacks (no shell commands):
+Subscribe to all 33 hook events with native JS callbacks (no shell commands):
 
 ```typescript
 import { Claude } from '@scottwalker/kraube-konnektor'
@@ -387,16 +416,16 @@ const claude = new Claude({
     PreToolUse: [{
       matcher: 'Bash',
       hooks: [async (input) => {
-        if (String(input.tool_input?.command).includes('sudo'))
-          return { decision: 'block', reason: 'sudo not allowed' }
-        return { continue: true }
+        // Narrow on hook_event_name to get this event's typed payload
+        if (input.hook_event_name !== 'PreToolUse') return { continue: true }
+        const { command = '' } = input.tool_input as { command?: string }
+        return command.includes('sudo')
+          ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' } }
+          : { continue: true }
       }],
     }],
-    Notification: [{
-      hooks: [async (input) => {
-        console.log('Notification:', input.message)
-        return {}
-      }],
+    FileChanged: [{
+      hooks: [async () => ({ continue: true })],
     }],
   },
 })
@@ -404,26 +433,39 @@ const claude = new Claude({
 
 ### Thinking Config
 
-Control Claude's reasoning behavior:
+Control Claude's reasoning behavior — in both modes, and per query:
 
 ```typescript
-import { Claude } from '@scottwalker/kraube-konnektor'
+import { Claude, EVENT_THINKING_TOKENS } from '@scottwalker/kraube-konnektor'
 
-const claude = new Claude({ thinking: { type: 'enabled' } })
+const claude = new Claude({ thinking: { type: 'enabled', budgetTokens: 20_000 } })
 // 'adaptive' — Claude decides | 'enabled' — always think | 'disabled' — no thinking
+
+await claude.stream('Plan the migration')
+  .on(EVENT_THINKING_TOKENS, (e) => process.stderr.write(`\rthinking… ${e.estimatedTokens}`))
+  .done()
 ```
 
 ### Runtime Control
 
-Change model or permission mode during a session:
+26 control methods drive the live SDK session — model, permissions, MCP, context,
+usage, plugins, skills, files, tasks:
 
 ```typescript
 import { Claude, PERMISSION_PLAN } from '@scottwalker/kraube-konnektor'
 
 const claude = new Claude({ model: 'sonnet' })
-claude.setModel('opus')                       // switch to a more capable model
-claude.setPermissionMode(PERMISSION_PLAN)     // tighten permissions mid-session
+await claude.setModel('opus')                     // switch to a more capable model
+await claude.setPermissionMode(PERMISSION_PLAN)   // tighten permissions mid-session
+await claude.applyFlagSettings({ effortLevel: 'high' })
+
+const context = await claude.getContextUsage()    // structured /context
+const report = await claude.usage()               // structured /usage
+console.log(context.percentage, report.session.totalCostUsd)
 ```
+
+Full list in the [API reference](./docs/API.md#control-methods-sdk-mode-only). All
+of them throw in CLI mode.
 
 ### Dynamic MCP
 
@@ -431,9 +473,10 @@ Add, reconnect, or toggle MCP servers at runtime:
 
 ```typescript
 const claude = new Claude()
-claude.setMcpServers({ db: { command: 'npx', args: ['@db/mcp'] } })
-await claude.reconnectMcpServer('db')   // restart after config change
-claude.toggleMcpServer('db', false)     // temporarily disable
+await claude.setMcpServers({ db: { command: 'npx', args: ['@db/mcp'] } })
+await claude.reconnectMcpServer('db')          // restart after config change
+await claude.toggleMcpServer('db', false)      // temporarily disable
+await claude.setMcpPermissionModeOverride('db', 'auto')  // pin one server's mode
 ```
 
 ### File Checkpointing
@@ -441,10 +484,21 @@ claude.toggleMcpServer('db', false)     // temporarily disable
 Snapshot and restore files modified by Claude:
 
 ```typescript
-const claude = new Claude({ enableFileCheckpointing: true })
-const result = await claude.query('Refactor the auth module')
-// Something went wrong? Roll back all file changes:
-await claude.rewindFiles(result.sessionId!)
+import { Claude, EVENT_PARTIAL_MESSAGE } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ enableFileCheckpointing: true, includePartialMessages: true })
+
+// rewindFiles() takes the uuid of the USER MESSAGE to restore to — capture it
+// from the stream (`userMessageUuid`), not from result.sessionId
+let checkpoint: string | undefined
+await claude.stream('Refactor the auth module')
+  .on(EVENT_PARTIAL_MESSAGE, (e) => { checkpoint ??= e.userMessageUuid })
+  .done()
+
+if (checkpoint) {
+  const preview = await claude.rewindFiles(checkpoint, { dryRun: true })
+  if (preview.canRewind) await claude.rewindFiles(checkpoint)
+}
 ```
 
 ### Account & Model Info
@@ -453,9 +507,9 @@ Query your subscription info and available models:
 
 ```typescript
 const claude = new Claude()
-const account = await claude.accountInfo()       // { plan, usage, limits }
-const models = await claude.supportedModels()    // ['opus', 'sonnet', ...]
-const agents = await claude.supportedAgents()    // available agent types
+const account = await claude.accountInfo()    // { email, organization, subscriptionType, apiProvider }
+const models = await claude.supportedModels() // ModelInfo[] — value, displayName, capabilities
+const agents = await claude.supportedAgents() // AgentInfo[] — name, description, model
 ```
 
 ### Per-Query Abort
@@ -476,13 +530,21 @@ const result = await claude.query('Long analysis task', {
 Monitor and stop spawned subagent tasks:
 
 ```typescript
-const handle = claude.stream('Run a full analysis')
-  .on('task_started', (e) => console.log(`Subagent: ${e.taskId}`))
-  .on('task_progress', (e) => console.log(`Progress: ${e.status}`))
-  .on('task_notification', (e) => console.log(e.message))
+import {
+  Claude, EVENT_TASK_STARTED, EVENT_TASK_PROGRESS, EVENT_TASK_NOTIFICATION,
+} from '@scottwalker/kraube-konnektor'
 
-// Stop a specific subagent
-await claude.stopTask(taskId)
+const claude = new Claude({ agentProgressSummaries: true, perTaskStopAffordance: true })
+
+await claude.stream('Run a full analysis')
+  .on(EVENT_TASK_STARTED, (e) => console.log(`Subagent ${e.taskId}: ${e.description}`))
+  .on(EVENT_TASK_PROGRESS, (e) => console.log(`Progress: ${e.summary ?? e.description}`))
+  .on(EVENT_TASK_NOTIFICATION, (e) => console.log(`${e.status}: ${e.summary}`))
+  .done()
+
+// Stop one subagent, or push the running tool call to the background
+await claude.stopTask('task-42')
+await claude.backgroundTasks()
 ```
 
 ### Settings & Plugins
@@ -520,20 +582,28 @@ const claude = new Claude({
 })
 ```
 
-### Session Utilities
+### Session Management
 
-List and inspect past sessions:
+List, read, fork, rename, tag and delete stored sessions — in both modes:
 
 ```typescript
-import { listSessions, getSessionMessages } from '@scottwalker/kraube-konnektor'
+import {
+  listSessions, getSessionMessages, listSubagents, forkSession, tagSession,
+} from '@scottwalker/kraube-konnektor'
 
-const sessions = await listSessions({ limit: 10 })                  // all session IDs + metadata
-const messages = await getSessionMessages(sessions[0].sessionId)    // full message history
+const sessions = await listSessions({ dir: process.cwd(), limit: 10 })
+const id = sessions[0]!.sessionId
+
+const messages = await getSessionMessages(id, { limit: 50 })  // full message history
+const agentIds = await listSubagents(id)                      // subagent transcripts
+const { sessionId } = await forkSession(id, { title: 'What-if' })
+await tagSession(sessionId, 'experiment')
 ```
 
 ### Full Configuration
 
-All Claude Code CLI capabilities in one place:
+A tour of the main option groups — all 82 are tabulated, with their supported
+mode, in the [API reference](./docs/API.md#clientoptions).
 
 ```typescript
 import {
@@ -548,13 +618,15 @@ const claude = new Claude({
 
   // Model
   model: 'opus',                      // 'opus' | 'sonnet' | 'haiku' | full model ID
-  effortLevel: EFFORT_HIGH,           // EFFORT_LOW | EFFORT_MEDIUM | EFFORT_HIGH | EFFORT_MAX
-  fallbackModel: 'sonnet',            // auto-fallback on failure
+  effortLevel: EFFORT_HIGH,           // low | medium | high | xhigh | max
+  fallbackModel: ['sonnet', 'haiku'], // tried in order
+  thinking: { type: 'adaptive' },     // adaptive | enabled (+budgetTokens) | disabled
 
-  // Permissions
-  permissionMode: PERMISSION_ACCEPT_EDITS,  // PERMISSION_DEFAULT | PERMISSION_ACCEPT_EDITS | PERMISSION_PLAN | PERMISSION_AUTO | PERMISSION_DONT_ASK | PERMISSION_BYPASS
+  // Permissions & isolation
+  permissionMode: PERMISSION_ACCEPT_EDITS,  // default | manual | acceptEdits | plan | dontAsk | auto | bypassPermissions
   allowedTools: ['Read', 'Edit', 'Bash(npm run *)'],
   disallowedTools: ['WebFetch'],
+  sandbox: { enabled: true, network: { allowedDomains: ['registry.npmjs.org'] } },  // SDK mode
 
   // Prompts
   systemPrompt: 'You are a senior TypeScript developer',
@@ -562,35 +634,36 @@ const claude = new Claude({
 
   // Limits
   maxTurns: 10,                       // max agentic turns per query
-  maxBudget: 5.0,                     // max USD per query
+  maxBudget: 5.0,                     // max USD per query — enforced
+  taskBudgetTokens: 200_000,          // token allowance the model is told about
 
-  // Directories
+  // Tools, skills, agents, MCP
+  skills: ['pdf'],                    // SDK mode — the only way to enable skills
+  agents: { /* ... */ },
+  mcpServers: { /* ... */ },          // inline; `mcpConfig` is the CLI-mode file form
   additionalDirs: ['../shared-lib', '../proto'],
 
-  // MCP (inline definitions for SDK mode)
-  mcpServers: { /* ... */ },
+  // Hooks: `hookCallbacks` are JS functions (SDK mode), `hooks` shell entries (CLI mode)
+  hookCallbacks: { /* ... */ },
 
-  // Agents
-  agents: { /* ... */ },
-
-  // Hooks
-  hooks: { /* ... */ },
+  // Settings — without 'project', CLAUDE.md is NOT read
+  settingSources: ['user', 'project'],
 
   // Environment
-  env: {
-    MAX_THINKING_TOKENS: '50000',
-    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
-  },
+  env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' },
 
   // Session
   noSessionPersistence: true,         // for CI/automation
 })
 
-// Override any option per query
+// Per-query overrides. CLI mode applies all of them; SDK mode bridges eight
+// (model, permissionMode, thinking, effortLevel, fallbackModel, allowedTools,
+// disallowedTools, additionalDirs) and restores them after the turn.
 const result = await claude.query('Analyze this module', {
   model: 'haiku',                     // cheaper model for this query
   permissionMode: PERMISSION_PLAN,    // read-only
-  maxTurns: 3,
+  effortLevel: 'high',                // bridged in both modes
+  maxTurns: 3,                        // CLI mode only
 })
 ```
 
@@ -672,6 +745,8 @@ class MockExecutor implements IExecutor {
 
 // Use in tests or with future backends
 const claude = new Claude({ model: 'opus' }, new MockExecutor())
+// Only the 8 required QueryResult fields must be returned — the extended ones
+// (terminalReason, modelUsage, permissionDenials, …) are optional.
 ```
 
 ## Architecture
@@ -689,7 +764,8 @@ const claude = new Claude({ model: 'opus' }, new MockExecutor())
 
 - **Two modes** — SDK (persistent session, fast) or CLI (process-per-query, simple)
 - **Executor pattern** — swap CLI for SDK/HTTP without touching consumer code
-- **Immutable config** — client options frozen at construction, per-query overrides are non-destructive
+- **Immutable config** — client options frozen at construction; SDK mode applies its per-query overrides then restores them
+- **One event union** — both executors map the same 43 `StreamEvent` variants, so consumers are mode-agnostic
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for detailed design documentation.
 
@@ -714,6 +790,7 @@ npm run stream     # streaming mode (word by word)
 |----------|-------------|
 | [Architecture](./docs/ARCHITECTURE.md) | Design principles, SOLID breakdown, data flow diagrams |
 | [API Reference](./docs/API.md) | Complete reference for all classes, methods, types, and options |
+| [Streaming](./docs/STREAMING.md) | All 43 stream events, handle APIs, and integration patterns |
 | [Examples](./docs/EXAMPLES.md) | Comprehensive cookbook covering every feature with code snippets |
 | [Changelog](./CHANGELOG.md) | Version history |
 | [Contributing](./CONTRIBUTING.md) | Development setup and guidelines |

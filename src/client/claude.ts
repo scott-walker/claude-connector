@@ -4,10 +4,18 @@ import type {
   McpServerStatus, McpSetServersResult, RewindFilesResult,
   McpServerConfig, McpSdkServerConfig, PermissionMode,
 } from '../types/index.js';
+import type {
+  FlagSettings, McpPermissionModeOverride, ThinkingDisplay,
+} from '../types/client.js';
+import type {
+  ContextUsage, InitializationResult, InterruptResult,
+  McpPermissionModeOverrideResult, ReadFileResult,
+  ReloadPluginsResult, ReloadSkillsResult, UsageReport,
+} from '../types/result.js';
 import type { SessionOptions } from '../types/session.js';
-import type { IExecutor } from '../executor/interface.js';
+import type { ExecuteOptions, IExecutor } from '../executor/interface.js';
 import { CliExecutor } from '../executor/cli-executor.js';
-import { SdkExecutor, type InitStage, type SdkExecutorOptions } from '../executor/sdk-executor.js';
+import { SdkExecutor, type InitStage } from '../executor/sdk-executor.js';
 import { buildArgs, mergeOptions, resolveEnv } from '../builder/args-builder.js';
 import { validateClientOptions, validateQueryOptions, validatePrompt } from '../utils/validation.js';
 import {
@@ -18,6 +26,7 @@ import {
   INIT_EVENT_READY,
   INIT_EVENT_ERROR,
 } from '../constants.js';
+import { toSdkExecutorOptions } from './sdk-options.js';
 import { Session } from './session.js';
 import { StreamHandle } from './stream-handle.js';
 import { ChatHandle } from './chat-handle.js';
@@ -57,50 +66,7 @@ export class Claude {
     if (executor) {
       this.executor = executor;
     } else if (useSdk) {
-      const sdkOpts: SdkExecutorOptions = {
-        model: options.model,
-        pathToClaudeCodeExecutable: options.executable,
-        cwd: options.cwd,
-        permissionMode: options.permissionMode,
-        allowedTools: options.allowedTools ? [...options.allowedTools] : undefined,
-        disallowedTools: options.disallowedTools ? [...options.disallowedTools] : undefined,
-        env: options.env,
-        systemPrompt: options.systemPrompt,
-        appendSystemPrompt: options.appendSystemPrompt,
-        maxTurns: options.maxTurns,
-        maxBudget: options.maxBudget,
-        effortLevel: options.effortLevel,
-        fallbackModel: options.fallbackModel,
-        // New SDK-level options
-        canUseTool: options.canUseTool,
-        thinking: options.thinking,
-        enableFileCheckpointing: options.enableFileCheckpointing,
-        onElicitation: options.onElicitation,
-        hookCallbacks: options.hookCallbacks,
-        mcpServers: options.mcpServers,
-        agents: options.agents,
-        agent: options.agent,
-        tools: options.tools ? [...options.tools] : undefined,
-        additionalDirs: options.additionalDirs ? [...options.additionalDirs] : undefined,
-        noSessionPersistence: options.noSessionPersistence,
-        strictMcpConfig: options.strictMcpConfig,
-        betas: options.betas ? [...options.betas] : undefined,
-        includePartialMessages: options.includePartialMessages,
-        promptSuggestions: options.promptSuggestions,
-        agentProgressSummaries: options.agentProgressSummaries,
-        debug: options.debug,
-        debugFile: options.debugFile,
-        // New passthrough options
-        stderr: options.stderr,
-        allowDangerouslySkipPermissions: options.allowDangerouslySkipPermissions,
-        settingSources: options.settingSources,
-        settings: options.settings,
-        plugins: options.plugins,
-        spawnClaudeCodeProcess: options.spawnClaudeCodeProcess as ((options: unknown) => unknown) | undefined,
-        schema: options.schema,
-        initTimeoutMs: options.initTimeoutMs,
-      };
-      this.sdkExecutor = new SdkExecutor(sdkOpts);
+      this.sdkExecutor = new SdkExecutor(toSdkExecutorOptions(options));
       this.executor = this.sdkExecutor;
     } else {
       this.executor = new CliExecutor(options.executable);
@@ -152,10 +118,17 @@ export class Claude {
     const env = resolveEnv(this.options, options);
 
     return this.executor.execute(args, {
+      // Every per-query override, by name: `QueryOptions` is a subset of
+      // `ExecuteOptions`, so the spread carries them all and the explicit
+      // fields below win where the resolved value differs from the raw one.
+      ...options,
       cwd: resolved.cwd,
       env,
+      prompt,
       input: options?.input,
-      systemPrompt: resolved.systemPrompt,
+      // Per-query value only: a client-level prompt is already the SDK
+      // session's own system prompt, and CLI mode carries it in `args`.
+      systemPrompt: options?.systemPrompt,
       signal: options?.signal,
     });
   }
@@ -177,11 +150,17 @@ export class Claude {
     const env = resolveEnv(this.options, options);
 
     const executor = this.executor;
-    const execOpts = {
+    const execOpts: ExecuteOptions = {
+      // Same channels as query(): resolved flags in `args`, raw prompt and
+      // per-query overrides here, for the executor that cannot read argv.
+      ...options,
       cwd: resolved.cwd,
       env,
+      prompt,
       input: options?.input,
-      systemPrompt: resolved.systemPrompt,
+      // Per-query value only: a client-level prompt is already the SDK
+      // session's own system prompt, and CLI mode carries it in `args`.
+      systemPrompt: options?.systemPrompt,
       signal: options?.signal,
     };
 
@@ -191,6 +170,10 @@ export class Claude {
   /**
    * Open a bidirectional chat — a persistent CLI process for real-time conversation.
    * Uses `--input-format stream-json` for multi-turn dialogue over a single process.
+   *
+   * Unlike {@link Claude.query} and {@link Claude.stream}, chat never goes
+   * through the executor: it owns its own process and each turn's prompt is
+   * carried by `chat.send()`, so there is no prompt to hand over up front.
    */
   chat(options?: QueryOptions): ChatHandle {
     if (options) validateQueryOptions(options);
@@ -288,6 +271,49 @@ export class Claude {
   }
 
   /**
+   * Change the thinking budget mid-session.
+   * SDK mode only — throws in CLI mode.
+   *
+   * @param maxThinkingTokens - Token budget; `0` disables thinking, `null`
+   *   clears the budget so the model's default maximum applies again. Any
+   *   other value caps an adaptive budget.
+   * @param thinkingDisplay - `'summarized'` to show a summary, `'omitted'` to
+   *   hide the blocks, `null` to restore the default.
+   *
+   * @deprecated Prefer {@link ClientOptions.thinking} at construction; this
+   *   exists for mid-session changes and mirrors the SDK's own deprecated
+   *   control method.
+   */
+  async setMaxThinkingTokens(
+    maxThinkingTokens: number | null,
+    thinkingDisplay?: ThinkingDisplay | null,
+  ): Promise<void> {
+    this.requireSdk('setMaxThinkingTokens');
+    await this.sdkExecutor!.setMaxThinkingTokens(maxThinkingTokens, thinkingDisplay);
+  }
+
+  /**
+   * Apply settings to the flag layer — the highest-priority settings tier —
+   * for the rest of the session. The mid-session twin of
+   * {@link ClientOptions.settings}.
+   * SDK mode only — throws in CLI mode.
+   *
+   * Shallow merge: keys you pass replace that key, keys you omit are left
+   * alone, and an explicit `null` clears the key so the next tier down wins
+   * again. Nothing is written to any settings file.
+   *
+   * @example
+   * ```ts
+   * await claude.applyFlagSettings({ effortLevel: 'high' })
+   * await claude.applyFlagSettings({ effortLevel: null })  // back to settings
+   * ```
+   */
+  async applyFlagSettings(settings: FlagSettings): Promise<void> {
+    this.requireSdk('applyFlagSettings');
+    await this.sdkExecutor!.applyFlagSettings(settings);
+  }
+
+  /**
    * Rewind files to their state at a specific user message.
    * Requires `enableFileCheckpointing: true`.
    * SDK mode only — throws in CLI mode.
@@ -298,12 +324,57 @@ export class Claude {
   }
 
   /**
+   * Tell the session a file is already known to the caller, so the
+   * Read-before-Edit guard accepts an edit the session never read itself.
+   * SDK mode only — throws in CLI mode.
+   *
+   * @param path - File path, absolute or relative to cwd.
+   * @param mtime - Modification time the caller observed, in milliseconds.
+   */
+  async seedReadState(path: string, mtime: number): Promise<void> {
+    this.requireSdk('seedReadState');
+    await this.sdkExecutor!.seedReadState(path, mtime);
+  }
+
+  /**
+   * Read a file through the session, so the read honours the same permission
+   * rules as the Read tool.
+   * SDK mode only — throws in CLI mode.
+   *
+   * Returns `null` — never throws — on permission denial, a missing file, or a
+   * transport error.
+   *
+   * @param path - File path, absolute or relative to cwd.
+   * @param options - `maxBytes` caps the read (default 1 MB); pass
+   *   `encoding: 'base64'` for binary files.
+   */
+  async readFile(
+    path: string,
+    options?: { maxBytes?: number; encoding?: 'utf-8' | 'base64' },
+  ): Promise<ReadFileResult | null> {
+    this.requireSdk('readFile');
+    return this.sdkExecutor!.readFile(path, options);
+  }
+
+  /**
    * Stop a running subagent task.
    * SDK mode only — throws in CLI mode.
    */
   async stopTask(taskId: string): Promise<void> {
     this.requireSdk('stopTask');
     await this.sdkExecutor!.stopTask(taskId);
+  }
+
+  /**
+   * Send the running tool call to the background — the Ctrl+B affordance.
+   * SDK mode only — throws in CLI mode.
+   *
+   * @param toolUseId - Tool call to background. Omit for the current one.
+   * @returns `true` when something was backgrounded.
+   */
+  async backgroundTasks(toolUseId?: string): Promise<boolean> {
+    this.requireSdk('backgroundTasks');
+    return this.sdkExecutor!.backgroundTasks(toolUseId);
   }
 
   /**
@@ -331,6 +402,22 @@ export class Claude {
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
     this.requireSdk('toggleMcpServer');
     await this.sdkExecutor!.toggleMcpServer(serverName, enabled);
+  }
+
+  /**
+   * Pin one MCP server's permission mode, independent of the session's.
+   * SDK mode only — throws in CLI mode.
+   *
+   * @param serverName - Server to pin.
+   * @param mode - `'auto'` to let the CLI decide, `'default'` to always prompt,
+   *   `null` to clear the pin.
+   */
+  async setMcpPermissionModeOverride(
+    serverName: string,
+    mode: McpPermissionModeOverride,
+  ): Promise<McpPermissionModeOverrideResult> {
+    this.requireSdk('setMcpPermissionModeOverride');
+    return this.sdkExecutor!.setMcpPermissionModeOverride(serverName, mode);
   }
 
   /**
@@ -379,12 +466,102 @@ export class Claude {
   }
 
   /**
-   * Interrupt the current query execution.
+   * What the session loaded when it started: commands, agents, models, output
+   * styles and the signed-in account.
+   * SDK mode only — throws in CLI mode.
+   *
+   * Cached from warm-up — this does not hit the control protocol. Use
+   * {@link Claude.reinitialize} to re-request it.
+   */
+  async initializationResult(): Promise<InitializationResult> {
+    this.requireSdk('initializationResult');
+    return this.sdkExecutor!.initializationResult();
+  }
+
+  /**
+   * Re-send `initialize` and refresh the cached result.
+   * SDK mode only — throws in CLI mode.
+   *
+   * Use after a transport gap: it redelivers pending `canUseTool` /
+   * `onUserDialog` requests and re-registers stdio hooks.
+   */
+  async reinitialize(): Promise<InitializationResult> {
+    this.requireSdk('reinitialize');
+    return this.sdkExecutor!.reinitialize();
+  }
+
+  /**
+   * Reload plugins from disk and return what the session now has.
    * SDK mode only — throws in CLI mode.
    */
-  async interrupt(): Promise<void> {
+  async reloadPlugins(): Promise<ReloadPluginsResult> {
+    this.requireSdk('reloadPlugins');
+    return this.sdkExecutor!.reloadPlugins();
+  }
+
+  /**
+   * Reload skills from disk and return the refreshed list.
+   * SDK mode only — throws in CLI mode.
+   */
+  async reloadSkills(): Promise<ReloadSkillsResult> {
+    this.requireSdk('reloadSkills');
+    return this.sdkExecutor!.reloadSkills();
+  }
+
+  /**
+   * Structured `/context` report — what is filling the context window right now.
+   * SDK mode only — throws in CLI mode.
+   *
+   * @example
+   * ```ts
+   * const usage = await claude.getContextUsage()
+   * console.log(`${usage.percentage}% of ${usage.rawMaxTokens}`)
+   * ```
+   */
+  async getContextUsage(): Promise<ContextUsage> {
+    this.requireSdk('getContextUsage');
+    return this.sdkExecutor!.getContextUsage();
+  }
+
+  /**
+   * Session cost totals plus plan rate-limit utilization — the structured form
+   * of what `/usage` prints.
+   * SDK mode only — throws in CLI mode.
+   *
+   * @experimental The SDK marks the underlying control request unstable; this
+   *   wrapper keeps a stable name, but the payload may still change.
+   */
+  async usage(): Promise<UsageReport> {
+    this.requireSdk('usage');
+    return this.sdkExecutor!.usage();
+  }
+
+  /**
+   * Attach an extra input stream to the running session.
+   * SDK mode only — throws in CLI mode.
+   *
+   * Normal turns do not go through here — `query()` / `stream()` push onto the
+   * session's own input. Use this to inject pre-built user messages
+   * (attachments, caller-chosen uuids) alongside them.
+   *
+   * @param stream - Async iterable of SDK user messages.
+   */
+  async streamInput(stream: AsyncIterable<unknown>): Promise<void> {
+    this.requireSdk('streamInput');
+    await this.sdkExecutor!.streamInput(stream);
+  }
+
+  /**
+   * Interrupt the current query execution.
+   * SDK mode only — throws in CLI mode.
+   *
+   * @returns Which queued user messages survived the interrupt, or `undefined`
+   *   on a CLI that predates the interrupt receipt protocol — the interrupt
+   *   still happened, it just reported nothing.
+   */
+  async interrupt(): Promise<InterruptResult | undefined> {
     this.requireSdk('interrupt');
-    await this.sdkExecutor!.interrupt();
+    return this.sdkExecutor!.interrupt();
   }
 
   private requireSdk(method: string): void {

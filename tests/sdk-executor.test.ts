@@ -243,7 +243,7 @@ describe('new ClientOptions pass through to SdkExecutorOptions', () => {
     expect(claude).toBeInstanceOf(Claude);
   });
 
-  it('accepts hookCallbacks with all 21 event types', () => {
+  it('accepts hookCallbacks with a representative set of hook event types', () => {
     const executor = createMockExecutor();
     const noop = async () => ({ continue: true as const });
     const claude = new Claude({
@@ -394,13 +394,20 @@ describe('new ClientOptions pass through to SdkExecutorOptions', () => {
 
   it('accepts spawnClaudeCodeProcess', () => {
     const executor = createMockExecutor();
+    // `SpawnedProcess` now mirrors the SDK's own interface: a synchronous
+    // `exitCode`, a `killed` flag, a boolean-returning `kill()`, and the
+    // on/once/off listeners the SDK uses to observe exit.
     const claude = new Claude({
       spawnClaudeCodeProcess: () => ({
-        stdout: process.stdout,
-        stderr: process.stderr,
-        stdin: process.stdin,
-        exitCode: Promise.resolve(0),
-        kill: () => {},
+        stdout: process.stdin,
+        stderr: process.stdin,
+        stdin: process.stdout,
+        killed: false,
+        exitCode: null,
+        kill: () => true,
+        on: () => {},
+        once: () => {},
+        off: () => {},
       }),
     }, executor);
 

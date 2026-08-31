@@ -136,22 +136,88 @@ console.log(fullText)
 
 ## Stream Events Reference
 
-| Event | Constant | Callback Signature | Description |
-|-------|----------|-------------------|-------------|
-| `text` | `EVENT_TEXT` | `(text: string)` | Incremental text chunk |
-| `tool_use` | `EVENT_TOOL_USE` | `(event: { toolName, toolInput })` | Tool invocation |
-| `result` | `EVENT_RESULT` | `(event: { text, sessionId, usage, cost, durationMs })` | Final result (always last) |
-| `error` | `EVENT_ERROR` | `(event: { message, code? })` | Error during execution |
-| `system` | `EVENT_SYSTEM` | `(event: { subtype, data })` | System/internal event |
-| `tool_progress` | `EVENT_TOOL_PROGRESS` | `(event: { toolUseId, toolName, elapsedTimeSeconds, ... })` | Tool execution progress |
-| `tool_use_summary` | `EVENT_TOOL_USE_SUMMARY` | `(event: { summary, precedingToolUseIds })` | AI summary of tool usage |
-| `auth_status` | `EVENT_AUTH_STATUS` | `(event: { isAuthenticating, output, error? })` | MCP auth status |
-| `hook_started` | `EVENT_HOOK_STARTED` | `(event: { hookId, hookName, hookEvent })` | Hook started |
-| `hook_progress` | `EVENT_HOOK_PROGRESS` | `(event: { hookId, hookName, stdout, stderr, ... })` | Hook output |
-| `hook_response` | `EVENT_HOOK_RESPONSE` | `(event: { hookId, hookName, outcome, exitCode?, ... })` | Hook completed |
-| `files_persisted` | `EVENT_FILES_PERSISTED` | `(event: { files, failed, processedAt })` | File checkpoint |
-| `compact_boundary` | `EVENT_COMPACT_BOUNDARY` | `(event: { trigger, preTokens })` | Context compaction |
-| `local_command_output` | `EVENT_LOCAL_COMMAND_OUTPUT` | `(event: { content })` | Slash command output |
+43 typed events. The table below groups the ones you are most likely to handle; the [`StreamEvent`](../api/types#streamevent) reference lists every field of every one, and the [Event Callbacks](../api/stream-handle#event-callbacks) tables list every constant `.on()` accepts.
+
+### Always on
+
+| Event | Constant | Callback |
+|-------|----------|----------|
+| `text` | `EVENT_TEXT` | `(text: string)` |
+| `thinking` | `EVENT_THINKING` | `(event: { thinking, signature?, redacted })` |
+| `thinking_tokens` | `EVENT_THINKING_TOKENS` | `(event: { estimatedTokens, estimatedTokensDelta? })` |
+| `tool_use` | `EVENT_TOOL_USE` | `(event: { toolName, toolInput })` |
+| `tool_result` | `EVENT_TOOL_RESULT` | `(event: { toolUseId, content, isError? })` |
+| `tool_progress` | `EVENT_TOOL_PROGRESS` | `(event: { toolUseId, toolName, elapsedTimeSeconds })` |
+| `tool_use_summary` | `EVENT_TOOL_USE_SUMMARY` | `(event: { summary, precedingToolUseIds })` |
+| `result` | `EVENT_RESULT` | `(event: { text, sessionId, usage, cost, durationMs, subtype, isError?, … })` — last of the turn's own events; trailing informational frames can still follow |
+| `error` | `EVENT_ERROR` | `(event: { message, code?, aborted?, requestId? })` |
+| `init` | `EVENT_INIT` | `(event: { model, cwd, tools, mcpServers?, agents?, … })` |
+| `system` | `EVENT_SYSTEM` | `(event: { subtype, data })` — catch-all for anything unmodelled |
+| `compact_boundary` | `EVENT_COMPACT_BOUNDARY` | `(event: { trigger, preTokens, postTokens? })` |
+| `context_usage` | `EVENT_CONTEXT_USAGE` | `(event: { contextUsage })` |
+| `rate_limit` | `EVENT_RATE_LIMIT` | `(event: { status, rateLimitType?, utilization?, resetsAt? })` |
+| `api_retry` | `EVENT_API_RETRY` | `(event: { attempt, maxRetries?, retryDelayMs? })` |
+| `permission_denied` | `EVENT_PERMISSION_DENIED` | `(event: { toolName, decisionReason? })` |
+| `notification` | `EVENT_NOTIFICATION` | `(event: { text, priority?, color? })` |
+| `files_persisted` | `EVENT_FILES_PERSISTED` | `(event: { files, failed, processedAt })` |
+| `local_command_output` | `EVENT_LOCAL_COMMAND_OUTPUT` | `(event: { content })` |
+| `auth_status` | `EVENT_AUTH_STATUS` | `(event: { isAuthenticating, output?, error? })` |
+
+### Opt-in
+
+| Event | Constant | Requires |
+|-------|----------|----------|
+| `partial_message` | `EVENT_PARTIAL_MESSAGE` | `includePartialMessages: true` |
+| `hook_started` / `hook_progress` / `hook_response` | `EVENT_HOOK_STARTED`, … | `includeHookEvents: true` |
+| `prompt_suggestion` | `EVENT_PROMPT_SUGGESTION` | `promptSuggestions: true` — arrives after the turn's `result`, so SDK mode needs a `postResultDrainMs` window wide enough to catch it |
+
+### Subagents, environment and lifecycle
+
+`task_started`, `task_progress`, `task_notification`, `task_updated`, `background_tasks_changed`, `session_state_changed`, `status`, `worker_shutting_down`, `conversation_reset`, `mirror_error`, `informational`, `memory_recall`, `commands_changed`, `plugin_install`, `elicitation_complete`, `control_request_progress`, `model_refusal_fallback`, `model_refusal_no_fallback`.
+
+::: tip Nothing is dropped
+Messages the parser does not recognize are forwarded as `EVENT_SYSTEM` with the raw payload in `data`, so a newer CLI never silently loses information.
+:::
+
+## Watching the Model Think
+
+```ts
+import { Claude, EVENT_THINKING, EVENT_THINKING_TOKENS } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({ thinking: { type: 'enabled', budgetTokens: 8_000 } })
+
+await claude.stream('Design a migration plan')
+  .on(EVENT_THINKING_TOKENS, (e) => process.stderr.write(`\rthinking: ${e.estimatedTokens} tokens`))
+  .on(EVENT_THINKING, (e) => {
+    // redacted blocks carry encrypted text that cannot be displayed
+    if (!e.redacted) console.log(`\n[reasoning] ${e.thinking}`)
+  })
+  .done()
+```
+
+## Distinguishing Failure Modes
+
+`result.subtype` carries the CLI's exact verdict, and `terminalReason` says why the loop stopped:
+
+```ts
+import { Claude, EVENT_RESULT, RESULT_ERROR_MAX_TURNS, RESULT_ERROR_MAX_BUDGET_USD } from '@scottwalker/kraube-konnektor'
+
+await claude.stream('Refactor the whole module', { maxTurns: 5 })
+  .on(EVENT_RESULT, (event) => {
+    if (!event.isError) return
+    switch (event.subtype) {
+      case RESULT_ERROR_MAX_TURNS:      console.error('ran out of turns'); break
+      case RESULT_ERROR_MAX_BUDGET_USD: console.error('ran out of budget'); break
+      default:                          console.error(event.errors?.join('\n'))
+    }
+    console.error('stopped because:', event.terminalReason)
+  })
+  .done()
+```
+
+::: warning Changed in 0.7.0
+`subtype` used to collapse every `error_*` value to `'error'`. It is now passed through verbatim.
+:::
 
 ## Progress Tracking
 

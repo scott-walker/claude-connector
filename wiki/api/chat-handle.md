@@ -79,23 +79,23 @@ console.log(`Used ${result2.usage.outputTokens} output tokens`)
 
 ```typescript
 on(type: typeof EVENT_TEXT, callback: (text: string) => void): this
-on(type: typeof EVENT_TOOL_USE, callback: (event: StreamToolUseEvent) => void): this
-on(type: typeof EVENT_RESULT, callback: (event: StreamResultEvent) => void): this
-on(type: typeof EVENT_ERROR, callback: (event: StreamErrorEvent) => void): this
-on(type: typeof EVENT_SYSTEM, callback: (event: StreamSystemEvent) => void): this
+on(type: EventName, callback: (event: MatchingStreamEvent) => void): this
 ```
 
-Register a callback for a specific event type. Returns `this` for chaining. Same event types as [`StreamHandle.on()`](./stream-handle#on).
+Register a callback for one event type. Returns `this` for chaining.
+
+`ChatHandle` carries the same 43 typed overloads as [`StreamHandle.on()`](./stream-handle#on) — one per member of the [`StreamEvent`](./types#streamevent) union — so passing an `EVENT_*` constant narrows the callback parameter to exactly that event. See the [Event Callbacks](./stream-handle#event-callbacks) tables for the full list.
 
 Callbacks persist across all turns -- register once, receive events from every `.send()`.
 
 ```typescript
 import {
-  Claude, EVENT_TEXT, EVENT_TOOL_USE, EVENT_RESULT,
+  Claude, EVENT_TEXT, EVENT_TOOL_USE, EVENT_RESULT, EVENT_THINKING,
 } from '@scottwalker/kraube-konnektor'
 
 const chat = claude.chat()
   .on(EVENT_TEXT, (text) => process.stdout.write(text))
+  .on(EVENT_THINKING, (event) => console.log(`[reasoning] ${event.thinking}`))
   .on(EVENT_TOOL_USE, (event) => console.log(`Tool: ${event.toolName}`))
   .on(EVENT_RESULT, (event) => console.log(`\nTurn done: ${event.durationMs}ms`))
 

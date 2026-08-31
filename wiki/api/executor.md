@@ -41,7 +41,7 @@ Run a query to completion and return a structured result.
 stream(args: readonly string[], options: ExecuteOptions): AsyncIterable<StreamEvent>
 ```
 
-Run a query and stream incremental events. The returned async iterable yields events as they arrive. The final event is always of type `'result'` or `'error'`.
+Run a query and stream incremental events. The returned async iterable yields events as they arrive, and ends shortly after `'result'` or `'error'`. `SdkExecutor` drains the informational frames the SDK sends *after* the result — `prompt_suggestion`, a trailing `task_notification`, `session_state_changed` — bounded by `postResultDrainMs`, so `'result'` is the last *turn* event but not necessarily the last event of all.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -65,10 +65,35 @@ Low-level options passed directly to the executor. These are resolved from `Clie
 ```typescript
 interface ExecuteOptions {
   readonly cwd: string
-  readonly env: Record<string, string>
+  readonly env: Readonly<Record<string, string>>
+  readonly prompt?: string
   readonly input?: string
   readonly systemPrompt?: string
   readonly signal?: AbortSignal
+
+  // Per-query overrides, mirroring QueryOptions
+  readonly model?: string
+  readonly fallbackModel?: string | readonly string[]
+  readonly effortLevel?: EffortLevel
+  readonly permissionMode?: PermissionMode
+  readonly planModeInstructions?: string
+  readonly allowedTools?: readonly string[]
+  readonly disallowedTools?: readonly string[]
+  readonly appendSystemPrompt?: string
+  readonly systemPromptFile?: string
+  readonly appendSystemPromptFile?: string
+  readonly maxTurns?: number
+  readonly maxBudget?: number
+  readonly taskBudgetTokens?: number
+  readonly schema?: Record<string, unknown>
+  readonly worktree?: boolean | string
+  readonly additionalDirs?: readonly string[]
+  readonly agent?: string
+  readonly tools?: readonly string[] | ToolsPresetConfig
+  readonly skills?: readonly string[] | 'all'
+  readonly files?: readonly string[]
+  readonly background?: boolean
+  readonly thinking?: ThinkingConfig
 }
 ```
 
@@ -76,17 +101,24 @@ interface ExecuteOptions {
 |-------|------|-------------|
 | `cwd` | `string` | Working directory for the process |
 | `env` | `Record<string, string>` | Environment variables merged with `process.env` |
+| `prompt` | `string` | The prompt for this execution, verbatim |
 | `input` | `string` | Data piped to stdin (like `echo "data" \| claude`) |
-| `systemPrompt` | `string` | System prompt (used by SDK executor; CLI executor ignores this as it's in args) |
-| `signal` | `AbortSignal` | Optional abort signal for cooperative cancellation |
+| `systemPrompt` | `string` | System prompt. The CLI executor ignores it (it is already in `args`); the SDK executor prepends it to the prompt |
+| `signal` | `AbortSignal` | Abort signal for this execution |
+
+The remaining fields mirror [`QueryOptions`](./types#queryoptions) so an executor can honour a per-query override without re-parsing `args`.
+
+::: tip Why `prompt` is passed separately
+An executor that does not spawn a process would otherwise have to parse the flag array back apart, which loses quoting and mis-handles flags whose value is optional. `prompt` is authoritative; recovering it from `args` is the fallback.
+:::
 
 ## Contract
 
 Executors must follow these rules:
 
-1. **Stateless per invocation** -- no mutable state between calls
+1. **Isolated per invocation** -- one call must not leak configuration into the next. `SdkExecutor` keeps a live session, so it applies per-query overrides through the control protocol and restores the previous values afterwards
 2. **Error handling** -- throw [`KraubeKonnektorError`](./errors) subclasses for error conditions
-3. **Stream termination** -- `stream()` must yield a `'result'` or `'error'` event as the final event
+3. **Stream termination** -- `stream()` must yield a `'result'` or `'error'` event, and must end soon after it. Trailing informational frames may follow the result (`SdkExecutor` drains them for `postResultDrainMs`), but nothing that belongs to the turn may come after
 4. **Argument passthrough** -- `args` are fully resolved; the executor should not interpret or modify them
 
 ## Custom Executor Example

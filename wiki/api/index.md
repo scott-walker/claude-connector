@@ -234,49 +234,138 @@ await claude.init()
 
 ## SDK Control Methods
 
-These methods are only available in SDK mode (`useSdk: true`, the default). They throw an error if called in CLI mode.
+The 26 methods below only exist in SDK mode (`useSdk: true`, the default). In CLI mode each one throws `"<method>() is only available in SDK mode."`.
 
-### setModel()
+### Session configuration
+
+#### setModel()
 
 ```typescript
 setModel(model?: string): Promise<void>
 ```
 
-Change the active model for the current SDK session. If `model` is omitted, resets to the default.
+Change the active model for the current session. Omit `model` to reset to the default.
 
-### setPermissionMode()
+#### setPermissionMode()
 
 ```typescript
 setPermissionMode(mode: PermissionMode): Promise<void>
 ```
 
-Change the permission mode for the current SDK session.
+Change the permission mode for the current session.
 
-### rewindFiles()
+#### setMaxThinkingTokens()
 
 ```typescript
-rewindFiles(userMessageId: string, options?: RewindFilesOptions): Promise<RewindFilesResult>
+setMaxThinkingTokens(
+  maxThinkingTokens: number | null,
+  thinkingDisplay?: ThinkingDisplay | null,
+): Promise<void>
 ```
 
-Revert file changes back to the state at the given user message. Returns information about rewound files.
+Change the thinking budget mid-session. `0` disables thinking; `null` clears the budget so the model's default maximum applies again; any other value caps an adaptive budget. `thinkingDisplay` is `'summarized'` to show a summary, `'omitted'` to hide the blocks, or `null` to restore the default.
 
-### stopTask()
+::: tip
+Prefer [`ClientOptions.thinking`](./types#thinkingconfig) at construction. This mirrors the SDK's own deprecated control method and exists for mid-session changes.
+:::
+
+#### applyFlagSettings()
+
+```typescript
+applyFlagSettings(settings: FlagSettings): Promise<void>
+```
+
+Apply settings to the flag layer — the highest-priority settings tier — for the rest of the session. The mid-session twin of [`ClientOptions.settings`](./types#clientoptions).
+
+Shallow merge: keys you pass replace that key, keys you omit are left alone, and an explicit `null` clears the key so the next tier down wins again. Nothing is written to any settings file.
+
+```typescript
+await claude.applyFlagSettings({ effortLevel: 'high' })
+await claude.applyFlagSettings({ effortLevel: null }) // back to what settings say
+```
+
+### Files
+
+#### rewindFiles()
+
+```typescript
+rewindFiles(userMessageId: string, options?: { dryRun?: boolean }): Promise<RewindFilesResult>
+```
+
+Revert file changes back to their state at a given user message. Requires `enableFileCheckpointing: true`. Pass `dryRun: true` to preview.
+
+#### readFile()
+
+```typescript
+readFile(
+  path: string,
+  options?: { maxBytes?: number; encoding?: 'utf-8' | 'base64' },
+): Promise<ReadFileResult | null>
+```
+
+Read a file **through the session**, so the read honours the same permission rules as the `Read` tool. Returns `null` — never throws — on permission denial, a missing file, or a transport error. `maxBytes` caps the read (default 1 MB); pass `encoding: 'base64'` for binary files.
+
+#### seedReadState()
+
+```typescript
+seedReadState(path: string, mtime: number): Promise<void>
+```
+
+Tell the session a file is already known to the caller, so the Read-before-Edit guard accepts an edit the session never read itself. `mtime` is the modification time the caller observed, in milliseconds.
+
+### Tasks
+
+#### stopTask()
 
 ```typescript
 stopTask(taskId: string): Promise<void>
 ```
 
-Stop a running background task by its ID.
+Stop a running subagent task by its ID.
 
-### setMcpServers()
+#### backgroundTasks()
 
 ```typescript
-setMcpServers(servers: McpServerConfig[]): Promise<McpSetServersResult>
+backgroundTasks(toolUseId?: string): Promise<boolean>
 ```
 
-Replace the current set of MCP servers with a new configuration.
+Send the running tool call to the background — the Ctrl+B affordance. Omit `toolUseId` for the current call. Resolves `true` when something was backgrounded.
 
-### reconnectMcpServer()
+#### interrupt()
+
+```typescript
+interrupt(): Promise<InterruptResult | undefined>
+```
+
+Interrupt the current query.
+
+Returns a receipt naming which queued user messages survived (`stillQueued`) and which were cancelled. Resolves to `undefined` on a CLI that predates the receipt protocol — the interrupt still happened, it just reported nothing.
+
+::: warning Changed in 0.7.0
+The return type went from `Promise<void>` to `Promise<InterruptResult | undefined>`. Callers that ignore the return value are unaffected.
+:::
+
+#### streamInput()
+
+```typescript
+streamInput(stream: AsyncIterable<unknown>): Promise<void>
+```
+
+Attach an extra input stream to the running session. Normal turns do not go through here — `query()` and `stream()` push onto the session's own input. Use this to inject pre-built user messages (attachments, caller-chosen UUIDs) alongside them.
+
+### MCP
+
+#### setMcpServers()
+
+```typescript
+setMcpServers(
+  servers: Record<string, McpServerConfig | McpSdkServerConfig>,
+): Promise<McpSetServersResult>
+```
+
+Replace the current set of MCP servers.
+
+#### reconnectMcpServer()
 
 ```typescript
 reconnectMcpServer(serverName: string): Promise<void>
@@ -284,7 +373,7 @@ reconnectMcpServer(serverName: string): Promise<void>
 
 Reconnect a disconnected MCP server by name.
 
-### toggleMcpServer()
+#### toggleMcpServer()
 
 ```typescript
 toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
@@ -292,53 +381,117 @@ toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
 
 Enable or disable an MCP server by name.
 
-### accountInfo()
+#### setMcpPermissionModeOverride()
 
 ```typescript
-accountInfo(): Promise<AccountInfo>
+setMcpPermissionModeOverride(
+  serverName: string,
+  mode: McpPermissionModeOverride,
+): Promise<McpPermissionModeOverrideResult>
 ```
 
-Retrieve account information for the authenticated user.
+Pin one MCP server's permission mode, independent of the session's. `'auto'` lets the CLI decide, `'default'` always prompts, `null` clears the pin.
 
-### supportedModels()
-
-```typescript
-supportedModels(): Promise<ModelInfo[]>
-```
-
-List all models available to the current account.
-
-### supportedCommands()
-
-```typescript
-supportedCommands(): Promise<SlashCommand[]>
-```
-
-List all slash commands recognized by the SDK session.
-
-### supportedAgents()
-
-```typescript
-supportedAgents(): Promise<AgentInfo[]>
-```
-
-List all available agents.
-
-### mcpServerStatus()
+#### mcpServerStatus()
 
 ```typescript
 mcpServerStatus(): Promise<McpServerStatus[]>
 ```
 
-Get the connection status of all configured MCP servers.
+Connection status of all configured MCP servers.
 
-### interrupt()
+### Introspection
+
+#### initializationResult()
 
 ```typescript
-interrupt(): Promise<void>
+initializationResult(): Promise<InitializationResult>
 ```
 
-Send an interrupt signal to the SDK session, cancelling the current operation.
+What the session loaded when it started: commands, agents, models, output styles and the signed-in account. Served from the warm-up cache — this does not hit the control protocol.
+
+#### reinitialize()
+
+```typescript
+reinitialize(): Promise<InitializationResult>
+```
+
+Re-send `initialize` and refresh the cached result. Use after a transport gap: it redelivers pending `canUseTool` / `onUserDialog` requests and re-registers stdio hooks.
+
+#### getContextUsage()
+
+```typescript
+getContextUsage(): Promise<ContextUsage>
+```
+
+Structured `/context` report — what is filling the context window right now.
+
+```typescript
+const usage = await claude.getContextUsage()
+console.log(`${usage.percentage}% of ${usage.rawMaxTokens}`)
+```
+
+#### usage()
+
+```typescript
+usage(): Promise<UsageReport>
+```
+
+Session cost totals plus plan rate-limit utilization — the structured form of what `/usage` prints.
+
+::: warning Experimental
+The SDK marks the underlying control request unstable. This wrapper keeps a stable name, but the payload may still change.
+:::
+
+#### accountInfo()
+
+```typescript
+accountInfo(): Promise<AccountInfo>
+```
+
+Account information for the authenticated user.
+
+#### supportedModels()
+
+```typescript
+supportedModels(): Promise<ModelInfo[]>
+```
+
+Models available to the current account.
+
+#### supportedCommands()
+
+```typescript
+supportedCommands(): Promise<SlashCommand[]>
+```
+
+Slash commands the session recognizes.
+
+#### supportedAgents()
+
+```typescript
+supportedAgents(): Promise<AgentInfo[]>
+```
+
+Configured agents available to the Task tool.
+
+### Reloading
+
+#### reloadPlugins()
+
+```typescript
+reloadPlugins(): Promise<ReloadPluginsResult>
+```
+
+Reload plugins from disk and return the refreshed command and agent lists.
+
+#### reloadSkills()
+
+```typescript
+reloadSkills(): Promise<ReloadSkillsResult>
+```
+
+Reload skills from disk and return the refreshed list.
 
 ## Other Methods
 

@@ -131,17 +131,29 @@ Stream-level errors (received via `EVENT_ERROR` callback) indicate issues report
 Validation errors fire immediately — at construction time or call time:
 
 ```ts
-// Throws ValidationError at construction
+// Per-field checks, at construction
 new Claude({ maxTurns: -1 })
 new Claude({ maxBudget: 0 })
+new Claude({ taskBudgetTokens: 0 })
 new Claude({ permissionMode: 'invalid' as any })
 new Claude({ effortLevel: 'turbo' as any })
 
-// Throws ValidationError at call time
+// Combinations the SDK itself refuses, also at construction
+new Claude({ sessionId: id, resume: other })            // needs forkSession
+new Claude({ sessionId: id, continueSession: true })    // needs forkSession
+new Claude({ supportedDialogKinds: ['confirm'] })       // needs onUserDialog
+new Claude({ sessionStore: store, noSessionPersistence: true })
+new Claude({ mcpConfig: './mcp.json' })                 // SDK mode: use mcpServers
+
+// At call time
 await claude.query('')
 await claude.query('   ')
 await claude.query('Ok', { maxTurns: 0 })
 ```
+
+::: tip Why combinations are checked here
+Each of these is rejected by the SDK or the CLI anyway, but several turns later and with an opaque message. Catching them at construction turns a runtime surprise into a `ValidationError` naming the offending field.
+:::
 
 ::: warning
 Always validate user input before passing it to `claude.query()`. Empty or whitespace-only prompts throw `ValidationError` immediately.

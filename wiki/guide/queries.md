@@ -24,13 +24,36 @@ const result = await claude.query('Explain the auth module')
 
 result.text           // string — Claude's response
 result.sessionId      // string — session ID for resuming
-result.usage          // { inputTokens: number, outputTokens: number }
+result.usage          // { inputTokens: number, outputTokens: number } — main loop only
 result.cost           // number | null — USD cost
 result.durationMs     // number — wall-clock time
 result.messages       // Message[] — full conversation history
 result.structured     // unknown | null — parsed JSON when schema was used
 result.raw            // Record<string, unknown> — raw CLI JSON response
+
+// Outcome
+result.subtype        // 'success' | 'error_max_turns' | 'error_max_budget_usd' | ...
+result.isError        // boolean
+result.errors         // string[] — collected on an error_* result
+result.terminalReason // why the loop stopped: 'completed', 'budget_exhausted', ...
+
+// Accounting and timing
+result.modelUsage     // per-model totals, including subagents and compaction
+result.durationApiMs  // time waiting on the API
+result.ttftMs         // time to first token
+result.queuedTurnCount // > 0 means another turn follows
+
+// Governance
+result.permissionDenials // tool calls denied during the turn
+result.deferredToolUse   // a tool call handed back instead of run
+result.apiErrorStatus    // HTTP status of the API error that ended the turn
+result.fastModeState     // 'off' | 'cooldown' | 'on'
+result.origin            // who or what sent the prompt
 ```
+
+::: tip `usage` vs `modelUsage`
+`usage` counts the main loop only. For billing or accounting, use `modelUsage`, which covers subagents, sidechains and compaction as well.
+:::
 
 ### Accessing Message History
 
@@ -70,7 +93,7 @@ for (const msg of result.messages) {
 
 ## Per-Query Overrides
 
-Any `ClientOptions` field that has a `QueryOptions` counterpart can be overridden per-query:
+`QueryOptions` overrides `ClientOptions` for the duration of one query.
 
 ```ts
 import {
@@ -82,6 +105,7 @@ import {
 } from '@scottwalker/kraube-konnektor'
 
 const claude = new Claude({
+  useSdk: false,          // CLI mode: every override below becomes a flag
   model: 'sonnet',
   maxTurns: 10,
   maxBudget: 5.0,
@@ -92,7 +116,6 @@ const claude = new Claude({
   tools: ['Read', 'Glob', 'Grep', 'Bash'],
 })
 
-// Override everything for one query
 const result = await claude.query('Fix the critical bug NOW', {
   model: 'opus',
   maxTurns: 50,
@@ -101,7 +124,7 @@ const result = await claude.query('Fix the critical bug NOW', {
   effortLevel: EFFORT_MAX,
   systemPrompt: 'You are an emergency bug fixer. Act fast.',
   allowedTools: ['Read', 'Glob', 'Grep', 'Edit', 'Bash'],
-  tools: ['default'],
+  tools: { type: 'preset', preset: 'claude_code' },
   cwd: '/home/user/production-hotfix',
   additionalDirs: ['/home/user/shared-config'],
   env: { HOTFIX: 'true' },
@@ -109,6 +132,27 @@ const result = await claude.query('Fix the critical bug NOW', {
   worktree: 'hotfix-branch',
 })
 ```
+
+### What actually applies in SDK mode
+
+An SDK session is constructed once and reused, so most options are fixed at construction. This is the same list as on the [`QueryOptions`](../api/types#queryoptions) reference, and it is worth knowing before relying on an override.
+
+| Option | SDK mode | CLI mode |
+|--------|----------|----------|
+| `model` | Bridged through the control protocol, restored afterwards | Flag |
+| `permissionMode` | Bridged, restored afterwards | Flag |
+| `thinking` | Bridged, restored afterwards (`'adaptive'` has no token-budget spelling and is skipped) | Flag |
+| `effortLevel` | Bridged via `applyFlagSettings({ effortLevel })`, restored afterwards | Flag |
+| `fallbackModel` | Bridged via `applyFlagSettings({ fallbackModel })`, restored afterwards | Flag (comma-separated) |
+| `allowedTools` / `disallowedTools` / `additionalDirs` | Bridged via `applyFlagSettings({ permissions })` — the `allow` / `deny` / `additionalDirectories` lists — restored afterwards | Flags |
+| `signal` | Honoured — interrupts the running turn | Honoured — `SIGTERM` |
+| `systemPrompt` | Prepended to the prompt text as a system instruction | Flag |
+| Everything else — `cwd`, `env`, `input`, `planModeInstructions`, `appendSystemPrompt`, `systemPromptFile`, `appendSystemPromptFile`, `tools`, `agent`, `maxTurns`, `maxBudget`, `taskBudgetTokens`, `schema`, `worktree`, `files` | **Ignored** — fixed when the session is constructed, so set them on `ClientOptions` | Flags |
+| `skills`, `background` | **Inert** (`@deprecated`) — no per-query channel exists | **Inert** — no `--skills` flag, and `--bg` conflicts with `--print` |
+
+::: warning Fixed in 0.7.0
+Before 0.7.0 *no* per-query override reached the SDK session, and `signal` was a silent no-op there. Eight overrides and `signal` now work; the rest are documented as construction-time rather than being dropped without a word.
+:::
 
 ## Parallel Queries
 
@@ -162,14 +206,22 @@ import {
   EFFORT_LOW,
   EFFORT_MEDIUM,
   EFFORT_HIGH,
+  EFFORT_XHIGH,
   EFFORT_MAX,
 } from '@scottwalker/kraube-konnektor'
 
-const claude = new Claude({ effortLevel: EFFORT_LOW })    // fast, shallow
+const claude = new Claude({ effortLevel: EFFORT_LOW })     // fast, shallow
 const claude = new Claude({ effortLevel: EFFORT_MEDIUM })  // balanced
 const claude = new Claude({ effortLevel: EFFORT_HIGH })    // deep thinking
+const claude = new Claude({ effortLevel: EFFORT_XHIGH })   // above high
 const claude = new Claude({ effortLevel: EFFORT_MAX })     // maximum depth
 ```
+
+Not every model supports every level — `supportedModels()` reports `supportedEffortLevels` per model.
+
+::: tip Change it mid-session
+[`applyFlagSettings({ effortLevel })`](../api/#applyflagsettings) changes the level for the rest of an SDK session, and `{ effortLevel: null }` puts it back to whatever settings say.
+:::
 
 ## System Prompt
 
@@ -191,6 +243,42 @@ const claude = new Claude({
 })
 ```
 
+::: warning `systemPrompt` wins
+Setting both replaces the preset entirely and ignores `appendSystemPrompt` — the two are mutually exclusive. Before 0.7.0 the append silently discarded the custom prompt instead.
+:::
+
+### Split the Prompt on the Cache Boundary
+
+The array form of `systemPrompt` splits the prompt at `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`: everything before the marker is a stable, cacheable prefix, everything after is per-run context. SDK mode only.
+
+```ts
+import { Claude, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@scottwalker/kraube-konnektor'
+
+const claude = new Claude({
+  systemPrompt: [
+    'You are a release auditor. Follow the checklist strictly.',
+    SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    `Repo: ${repo}\nCommit: ${sha}`,
+  ],
+})
+```
+
+### Load It From a File
+
+```ts
+const claude = new Claude({
+  useSdk: false,
+  systemPromptFile: './prompts/auditor.md',
+  appendSystemPromptFile: './prompts/house-style.md',
+  // and for every subagent this session spawns
+  appendSubagentSystemPrompt: 'Report findings as a bullet list.',
+})
+```
+
+### Drop the Dynamic Sections
+
+`excludeDynamicSystemPromptSections: true` keeps the Claude Code preset but strips its environment, git and directory sections — useful when those change every run and would otherwise break prompt caching.
+
 ### Per-Query System Prompt Override
 
 ```ts
@@ -204,6 +292,10 @@ const result = await claude.query('Explain ownership', {
 })
 ```
 
+::: tip How the override lands
+In CLI mode it becomes `--system-prompt`. In SDK mode the session's prompt is already fixed, so the override is prepended to the prompt text as a system instruction instead.
+:::
+
 ## Piped Input (stdin)
 
 Provide additional context alongside the prompt — equivalent to `echo "data" | claude -p "prompt"`:
@@ -211,12 +303,17 @@ Provide additional context alongside the prompt — equivalent to `echo "data" |
 ```ts
 import { readFileSync } from 'node:fs'
 
+const claude = new Claude({ useSdk: false })
 const logContent = readFileSync('/var/log/app.log', 'utf-8')
 
 const result = await claude.query('Find errors in these logs', {
   input: logContent,
 })
 ```
+
+::: warning CLI mode
+There is no stdin to pipe to in SDK mode, where the session is long-lived. Use `useSdk: false`, or fold the content into the prompt itself.
+:::
 
 ### Analyze Diff Output
 
@@ -250,6 +347,10 @@ const result = await claude.query('Build the auth feature', {
 Worktree isolation is ideal for exploratory changes. Claude operates on a separate copy of your repo, so your working tree remains clean.
 :::
 
+::: warning CLI mode
+`worktree` becomes the `--worktree` flag, so it needs `useSdk: false`. For per-agent isolation in SDK mode, set `isolation: 'worktree'` on an [`AgentConfig`](../api/types#agentconfig) instead.
+:::
+
 ## Additional Directories
 
 Grant Claude access to directories outside the main working directory:
@@ -260,11 +361,13 @@ const claude = new Claude({
   additionalDirs: ['/home/user/shared-lib', '/home/user/config'],
 })
 
-// Per-query additional directories
+// Per-query additional directories (CLI mode — a flag per spawn)
 const result = await claude.query('Compare our auth with the shared lib', {
   additionalDirs: ['/home/user/other-project/src'],
 })
 ```
+
+In SDK mode the directory set is fixed at construction, so use the client-level option.
 
 ## Thinking Config
 
@@ -316,6 +419,12 @@ try {
 ::: tip
 `signal` cancels a single query. `claude.abort()` kills the entire active session. Use `signal` when running parallel queries and you only want to cancel one.
 :::
+
+::: warning Fixed in 0.7.0
+`signal` used to be a no-op in SDK mode — the default — so the query ran to completion regardless. It now interrupts the running turn in both modes.
+:::
+
+For a session-wide abort in SDK mode, pass your own `abortController` in `ClientOptions`: aborting it tears the whole session down.
 
 ## Runtime Model Switch
 
